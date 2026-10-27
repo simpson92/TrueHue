@@ -1,0 +1,13 @@
+# 가상환경 (각자 컴퓨터에서 다시 만들면 됨)
+.venv/
+
+# 데이터셋 원본 — 용량이 크고 재배포 금지
+data/
+
+# 실행할 때마다 새로 생기는 결과물
+outputs/
+
+# 파이썬·Jupyter 자동 생성 파일
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
