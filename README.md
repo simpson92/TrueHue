@@ -21,6 +21,7 @@
 - [x] 카메라별 색 변환 행렬 (보정용 사진으로)
 - [x] 중간 점검 · 공통 모듈 정리 (RGB 읽기, 처리 흐름 한 곳으로)
 - [x] 컬러체커 위치 찾는 방법 결정 (정답 색으로 찾기, 처음 보는 30장 중 29장)
+- [x] 중간 점검 데이터 확인 (1D 채널 순서 · 흰색 빈칸 · 정답 조명 의심 사진)
 - [ ] 568장 컬러체커 위치 적용 + 사람 검수
 - [ ] 정답표·이름 규칙 확정 (김하민 검토 후, 기준선 채점 전)
 - [ ] 조명 추정 3종(Gray World · White Patch · Shades of Gray) 구현
@@ -113,13 +114,14 @@ cd ../..
 | `src/07_make_splits.py` | 보정용 1/3 · 봉인 평가용 2/3 분할 (이미 있으면 덮어쓰지 않음) | `splits/*.txt`, 보정용 190장 / 평가용 378장 |
 | `src/08_fit_color_matrix.py` | 보정용 사진으로 카메라별 3×3 색 변환 행렬 맞추기 | `reports/color_matrix.json`, ΔE 중앙값 5D 2.55 · 1D 5.03 |
 | `src/09_pilot_chart_detect.py` | (시험) 컬러체커 자동 검출 방법 비교 — 정답 색으로 찾기 3차, 처음 보는 30장 중 29장 | `outputs/chart_pilot*/`, 결과는 decisions.md D8 |
+| `src/10_check_camera_white.py` | (점검) 1D 채널 순서 · 흰색 빈칸 원인 · SFU 정답 조명 의심 사진 | 순서 맞음, 9/9장 포화, 의심 3장 (data_notes · D9) |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
-`src/namer.py`도 부품이다. 07·08·09는 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+`src/namer.py`도 부품이다. 07~10은 02가 만든 `outputs/gehler_index.csv`가 필요하다.
 
 ```bash
-for f in src/0*.py; do echo "== $f"; python "$f"; done
+for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은 스크립트만 순서대로
 ```
 
 ## 지금까지의 주요 발견
@@ -128,8 +130,10 @@ for f in src/0*.py; do echo "== $f"; python "$f"; done
 - **카메라 2종**: Canon 1D 86장(`8D5U…`, 블랙 레벨 0) / Canon 5D 482장(`IMG_…`, 블랙 레벨 129).
   파일명 정렬 순서가 정답 파일 순서(1D → 5D)와 일치
 - **24칸 평균 색이 이미 제공됨** (블랙 레벨 미적용) → 정답 조명 재계산 오차 0으로 해석 검증
-- **빈칸 1,204칸**: 가장 어두운 채널이 20 미만인 칸을 데이터셋이 제외해 둠
-  → 채점 가능 **12,428 / 13,632 (91.2%)**. 어두운 색에 몰려 있어 한계로 기록
+- **빈칸 1,204칸**: 어둡거나(가장 어두운 채널 < 20) 포화된 칸을 데이터셋이 제외해 둠
+  → 채점 가능 **12,428 / 13,632 (91.2%)**. 대부분 어두운 색이라 한계로 기록. 흰색 빈칸 9장은 모두 포화
+- **정답 조명 의심 3장** (모두 1D): R·G·B가 서로 다른 회색 칸에서 옴 (Hemrit et al. 2018이 지적한 문제)
+  → 표시해 두고 최종 결과를 "568장 전체" · "3장 제외" 두 가지로 보고
 
 **정답표**
 - "가장 가까운 대표색"으로 자동으로 정하면 5칸이 틀림 (탁한 색 → 회색) → 사람이 근거를 적어 정함
@@ -144,6 +148,7 @@ for f in src/0*.py; do echo "== $f"; python "$f"; done
   기준값은 표준 색만 보고 정함 → 24칸 모두 정답. 회색 칸은 채도 여유가 약 9뿐이라 색 있는 조명에 약할 것으로 예상
 - 분할: 정할 값이 약 10개뿐이라 보정용 1/3(4,188칸)로 충분, 평가용 2/3(8,240칸)로 최종 점수의 오차 범위를 줄임
 - 색 변환: 진한 색(빨강·파랑·보라·귤색)에서 오차가 큼 → 조명을 완벽히 맞힌 상한선도 100%가 아닐 수 있음
+- 1D 오차가 5D의 약 2배: 채널 순서 문제가 아니라 센서 특성 → 리포트에 카메라별 점수를 따로 표기
 - 비교 설계: 기준선(평균 조명 고정) · 보정 3종 · 상한선(정답 조명)을 같은 색 변환·같은 이름 규칙으로 비교
 
 자세한 내용: [`reports/data_notes.md`](reports/data_notes.md) · 판단 이유: [`reports/decisions.md`](reports/decisions.md)
@@ -153,6 +158,7 @@ for f in src/0*.py; do echo "== $f"; python "$f"; done
 - Lilong Shi and Brian Funt, "Re-processed Version of the Gehler Color Constancy Dataset of 568 Images,"
   http://www.cs.sfu.ca/~colour/data/
 - Peter Gehler et al., "Bayesian Color Constancy Revisited," CVPR 2008
+- G. Hemrit et al., "Rehabilitating the ColorChecker Dataset for Illuminant Estimation," CIC 2018 (arXiv 1805.12262)
 - E. Ershov et al., "The Cube++ Illumination Estimation Dataset," IEEE Access 2020 —
   SimpleCube++, https://github.com/Visillect/CubePlusPlus (CC BY 4.0)
 - ColorChecker 공식 값: colour-science 라이브러리 (`ColorChecker24 - Before November 2014`)
