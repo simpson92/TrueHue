@@ -36,8 +36,8 @@ truehue/
 ## 환경 설정 (WSL Ubuntu 기준)
 
 ```bash
-git clone https://github.com/simpson92/truehue.git
-cd truehue
+git clone https://github.com/simpson92/TrueHue.git
+cd TrueHue
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
