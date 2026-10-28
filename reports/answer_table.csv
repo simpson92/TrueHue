@@ -1,0 +1,25 @@
+patch,patch_name,answer,answer_alt,confidence,rg_group,reason
+1,dark skin,갈색,,확실,,어둡고(L 38) 탁한 주황 계열
+2,light skin,주황,분홍,애매,,살구색 - 11색에 없는 색
+3,blue sky,파랑,,확실,,색상 257도 탁한 하늘색
+4,foliage,초록,,확실,초록,채도 25.5로 무채색 아님 (대표색 계산 회색은 오류)
+5,blue flower,보라,파랑,애매,,라벤더색 - 색상 289도
+6,bluish green,초록,파랑,애매,,민트 청록색
+7,orange,주황,,확실,,
+8,purplish blue,파랑,,확실,,파랑과 훨씬 가까움 (margin 14.6)
+9,moderate red,빨강,,거의 확실,빨강,탁한 빨강 - 분홍과도 가까움 (margin 3.8)
+10,purple,보라,,확실,,
+11,yellow green,초록,노랑,애매,초록,연두색
+12,orange yellow,주황,노랑,애매,,귤색 황금색
+13,blue,파랑,,확실,,
+14,green,초록,,확실,초록,
+15,red,빨강,,확실,빨강,
+16,yellow,노랑,,확실,,
+17,magenta,분홍,보라,애매,,자홍색
+18,cyan,파랑,초록,애매,,청록 하늘색 (대표색 계산 회색은 오류)
+19,white,흰색,,확실,,
+20,neutral 8,회색,흰색,애매,,아주 밝은 회색 (L 81)
+21,neutral 6.5,회색,,확실,,
+22,neutral 5,회색,,확실,,
+23,neutral 3.5,회색,,거의 확실,,채도 1.3 무채색 (대표색 계산 보라는 오류)
+24,black,검정,,거의 확실,,L 20.5 아주 짙은 회색이지만 검정 칸
