@@ -19,6 +19,9 @@
 - [x] 색 이름 규칙 **초안** (표준 색 24개 모두 정답)
 - [x] 보정용 / 봉인 평가용 분할 고정
 - [x] 카메라별 색 변환 행렬 (보정용 사진으로)
+- [x] 중간 점검 · 공통 모듈 정리 (RGB 읽기, 처리 흐름 한 곳으로)
+- [x] 컬러체커 위치 찾는 방법 결정 (정답 색으로 찾기, 처음 보는 30장 중 29장)
+- [ ] 568장 컬러체커 위치 적용 + 사람 검수
 - [ ] 정답표·이름 규칙 확정 (김하민 검토 후, 기준선 채점 전)
 - [ ] 조명 추정 3종(Gray World · White Patch · Shades of Gray) 구현
 - [ ] SimpleCube++로 조명 추정 정확도(각도 오차) 평가
@@ -42,6 +45,9 @@ TrueHue/
 ```
 
 ## 환경 설정 (WSL Ubuntu 기준)
+
+**Python 3.14 기준.** `requirements.txt`의 버전(numpy 2.5, pandas 3.1, opencv 5.0 등)은 최신 파이썬에서만 설치된다.
+`python3 --version`으로 먼저 확인할 것.
 
 ```bash
 git clone https://github.com/simpson92/TrueHue.git
@@ -97,17 +103,20 @@ cd ../..
 
 | 스크립트 | 하는 일 | 결과 |
 |---|---|---|
-| `src/00_check_data.py` | Gehler-Shi PNG 개수·dtype·값 범위 확인 | 568장, uint16 선형 이미지 |
+| `src/00_check_data.py` | Gehler-Shi · SimpleCube++ PNG 개수·dtype·값 범위 확인 | 568장 · 1,772장 · 462장, uint16 선형 이미지 |
 | `src/01_inspect_gt.py` | 정답 `.mat` 파일 구조 확인 | 24칸 색 (568×24×3), 조명 정답 (568×3) |
 | `src/02_build_index.py` | 사진별 정보를 한 표로 묶고 정답 조명 검산 | `outputs/gehler_index.csv` (568×78), 오차 0 |
 | `src/03_inspect_nan.py` | 24칸 빈칸(NaN) 패턴·규칙 조사 | 채점 가능 12,428 / 13,632 |
 | `src/04_reference_colors.py` | 컬러체커 24칸 공식 Lab 값, 대표색과 비교 | `reports/patch_reference.csv`, `outputs/patches_preview.png` |
 | `src/05_check_simplecube.py` | SimpleCube++ 장수·정답 짝·라벨·블랙 레벨·포화 확인 | 2,234장, 블랙 레벨 2048, 포화 약 15,303 |
 | `src/06_test_namer.py` | 색 이름 규칙(`src/namer.py`)이 표준 색 24개를 정답표대로 맞히는지 검증 | 24/24 정답, `outputs/namer_hue_chroma.png` |
-| `src/07_make_splits.py` | 보정용 1/3 · 봉인 평가용 2/3 분할 (seed 42 고정, 다시 돌려도 같은 결과) | `splits/*.txt`, 보정용 190장 / 평가용 378장 |
+| `src/07_make_splits.py` | 보정용 1/3 · 봉인 평가용 2/3 분할 (이미 있으면 덮어쓰지 않음) | `splits/*.txt`, 보정용 190장 / 평가용 378장 |
 | `src/08_fit_color_matrix.py` | 보정용 사진으로 카메라별 3×3 색 변환 행렬 맞추기 | `reports/color_matrix.json`, ΔE 중앙값 5D 2.55 · 1D 5.03 |
+| `src/09_pilot_chart_detect.py` | (시험) 컬러체커 자동 검출 방법 비교 — 정답 색으로 찾기 3차, 처음 보는 30장 중 29장 | `outputs/chart_pilot*/`, 결과는 decisions.md D8 |
 
-`src/namer.py`는 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다. 07·08은 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+`src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
+다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
+`src/namer.py`도 부품이다. 07·08·09는 02가 만든 `outputs/gehler_index.csv`가 필요하다.
 
 ```bash
 for f in src/0*.py; do echo "== $f"; python "$f"; done

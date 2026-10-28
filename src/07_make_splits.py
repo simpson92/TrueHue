@@ -10,6 +10,12 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 SPLITS = ROOT / "splits"
 SPLITS.mkdir(exist_ok=True)
+# ⚠️ 분할 목록은 한 번 만들어 커밋한 것이 기준. 이미 있으면 덮어쓰지 않고 멈춘다
+#    (라이브러리 버전이 바뀌면 같은 seed라도 다르게 섞일 수 있음)
+FORCE = False          # 정말 다시 만들어야 할 때만 True (평가용을 열기 전에만!)
+if (SPLITS / "gehler_calib.txt").exists() and not FORCE:
+    print("splits/에 분할 목록이 이미 있음 → 덮어쓰지 않고 종료 (커밋된 목록이 기준)")
+    raise SystemExit(0)
 SEED = 42              # 무작위 시작값 고정 → 누가 돌려도 같은 결과
 CALIB_RATIO = 1 / 3    # 보정용 1/3, 평가용 2/3
 
