@@ -10,7 +10,8 @@
 #   3차에서 고친 것
 #     ④ 창 안에 그 색 픽셀이 "하나라도"가 아니라 "칸 넓이의 1/4 이상" 있어야 그 색이 있다고 본다
 #        → 큰 컬러체커의 일부만 담은 작은 창, 흩어진 픽셀 몇 개로 생기는 가짜 자리를 걸러 냄
-#   결과: outputs/chart_pilot/*.jpg (초록 상자), 한눈에 보기 그림, 요약 표
+#   확인 시험: ROUND="check"면 1~3차에 안 쓴 보정용 30장으로 3차 방식을 그대로 돌려 진짜 성공률을 잰다
+#   결과: outputs/chart_pilot/ (ROUND="tune") 또는 outputs/chart_pilot_check/ (ROUND="check")
 #   ⚠️ 자동 판정은 스스로 매긴 점수라 참고용. 최종 판단은 그림을 "눈으로" 확인해서 한다
 from pathlib import Path
 import cv2
@@ -71,12 +72,27 @@ def detect_chart(lin, patches, tol=0.2, floor=20.0):
     return box, n_found / len(ks), w * f
 
 
-# ── 시험할 사진 30장 (1차와 같은 방법·같은 seed → 같은 사진) ───────────
+# ── 시험할 사진 30장 ─────────────────────────────────────────
+# ROUND = "tune"  : 1~3차에 쓴 30장 (고칠 때 본 사진 → 검출기의 "보정용")
+# ROUND = "check" : 위 30장을 뺀 나머지 보정용 사진에서 새로 30장 (처음 보는 사진 → 검출기의 "진짜 실력")
+ROUND = "check"
 d = load_gehler_index("calib")
 rng = np.random.default_rng(SEED)
 idx_1d = rng.choice(np.where(d["cams"] == "1D")[0], 5, replace=False)
 idx_5d = rng.choice(np.where(d["cams"] == "5D")[0], N_PILOT - 5, replace=False)
-picks = sorted(np.concatenate([idx_1d, idx_5d]))
+picks = sorted(np.concatenate([idx_1d, idx_5d]))          # 1~3차의 30장 (seed 0)
+if ROUND == "check":
+    rest = np.setdiff1d(np.arange(len(d["names"])), picks)   # 1~3차 30장 빼기
+    rest_1d = [i for i in rest if d["cams"][i] == "1D"]
+    rest_5d = [i for i in rest if d["cams"][i] == "5D"]
+    rng2 = np.random.default_rng(1)                           # 다른 seed로 새로 뽑기
+    n_1d = min(5, len(rest_1d))                               # 남은 사진이 모자라면 있는 만큼만
+    n_5d = min(N_PILOT - n_1d, len(rest_5d))
+    picks = sorted(np.concatenate([rng2.choice(rest_1d, n_1d, replace=False),
+                                   rng2.choice(rest_5d, n_5d, replace=False)]))
+    OUT = ROOT / "outputs" / "chart_pilot_check"              # 1~3차 결과를 덮어쓰지 않게
+    OUT.mkdir(parents=True, exist_ok=True)
+print(f"ROUND = {ROUND}: 보정용 사진 {len(picks)}장으로 시험 → {OUT.relative_to(ROOT)}/")
 
 rows, thumbs = [], []
 for n, i in enumerate(picks, 1):
