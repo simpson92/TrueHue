@@ -29,9 +29,10 @@
 - [x] SimpleCube++ 보정용(train) 각도 오차 — 중앙값 Gray World 1.91° · White Patch 2.44°
 - [x] Shades of Gray p 정하기 — SimpleCube++ · Gehler 모두 **p = 3** (`reports/illum_params.json`)
 - [x] Gehler 보정용 각도 오차 (가림 영역 적용) — 중앙값 Gray World 3.72° · Shades of Gray 2.51° · White Patch 6.93°
-- [ ] 기준선 · 상한선 · 보정 3종 색 이름 채점 (보정용으로 먼저 확인)
+- [x] 조명 그룹 색온도 계산 점검 → Adobe DNG 카메라 행렬로 보완 (D10 보완)
+- [x] 색 이름 채점 연습 (보정용 190장) — 정답률 기준선 74.1% · Gray World 80.2% · White Patch 64.1% · Shades of Gray 86.0% · 상한선 95.8%
 - [ ] SimpleCube++ test로 조명 추정 정확도(각도 오차) 최종 평가
-- [ ] 기준선 · 보정 3종 · 상한선 색 이름 채점
+- [ ] 기준선 · 보정 3종 · 상한선 색 이름 채점 (평가용 378장, 1회)
 - [ ] 최종 1회 평가 · 웹 화면(FastAPI) · 리포트
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
 
@@ -126,11 +127,15 @@ cd ../..
 | `src/14_illum_simplecube.py` | Gray World · White Patch를 SimpleCube++ train 1,772장에 돌려 각도 오차 (test는 열지 않음) | `outputs/illum/simplecube_train.csv`, 중앙값 1.91° · 2.44° |
 | `src/15_sog_simplecube.py` | Shades of Gray p = 1~12를 SimpleCube++ train에서 비교 → 중앙값 최소 p (D11) | `reports/illum_params.json`(simplecube), p = 3 · 1.45° |
 | `src/16_illum_gehler.py` | Gehler 보정용 190장에서 가림 영역을 빼고 p = 1~12 비교 → 색 이름 채점에 쓸 p (D11) | `reports/illum_params.json`(gehler), p = 3 · 2.51° |
+| `src/17_check_cct.py` | (점검) 조명 그룹용 색온도 계산 — 우리 행렬(D10 원안) vs Adobe DNG 카메라 행렬, 흑체 궤적 거리 \|Duv\|로 확인 | `reports/illum_params.json`(cct), 1D = EOS-1Ds · 5D = EOS 5D (D10 보완) |
+| `src/18_estimate_gehler.py` | 기준선 조명(카메라별 평균) 저장 + 사진마다 보정 3종 조명 추정. 평가용은 `--final`로 최종 1회만 | `outputs/illum/gehler_est_calib.csv`, `illum_params.json`(baseline) |
+| `src/19_score_calib.py` | 보정용 190장 색 이름 채점 연습 — 정답률 · 일관성 · 칸별 · 회색 칸 채도 · 주 결과 부트스트랩 | `outputs/scores/calib_patches.csv`, SoG − 기준선 +11.8%p |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
-`src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray)도 부품이다.
-07~13 · 16은 02가 만든 `outputs/gehler_index.csv`가 필요하다. Gehler 사진으로 조명을 추정할 때는 `common.load_gehler_image`(포화 + 컬러체커 가림 영역 제외)로만 읽는다.
+`src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray), `src/scoring.py`(채점 · 일관성 · 조명 그룹 · 부트스트랩, `python src/scoring.py`는 자기 점검)도 부품이다.
+07~13 · 16~19는 02가 만든 `outputs/gehler_index.csv`가 필요하다. Gehler 사진으로 조명을 추정할 때는 `common.load_gehler_image`(포화 + 컬러체커 가림 영역 제외)로만 읽는다.
+19는 17 · 18을 먼저 실행해야 한다 (조명 그룹 행렬 · 추정 조명).
 12는 사람이 마우스로 고치는 단계라 `to_fix.txt`에 적은 사진이 없으면 아무것도 하지 않는다.
 
 ```bash
@@ -141,6 +146,7 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
 
 **Gehler-Shi**
 - **카메라 2종**: Canon 1D 86장(`8D5U…`, 블랙 레벨 0) / Canon 5D 482장(`IMG_…`, 블랙 레벨 129).
+  1D는 사진 크기(원본 4082×2718)로 보면 EOS-1Ds — 색온도 계산에서만 이 구분을 씀 (D10 보완)
   파일명 정렬 순서가 정답 파일 순서(1D → 5D)와 일치
 - **24칸 평균 색이 이미 제공됨** (블랙 레벨 미적용) → 정답 조명 재계산 오차 0으로 해석 검증
 - **빈칸 1,204칸**: 어둡거나(가장 어두운 채널 < 20) 포화된 칸을 데이터셋이 제외해 둠
@@ -179,11 +185,22 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
   두 데이터셋 모두 p = 3이 골라졌고, p = 3~5 사이는 중앙값 차이가 0.05° 안팎이라 p 선택에 민감하지 않음
 - Gehler가 SimpleCube++보다 어려움 (2.51° vs 1.45°): 조명이 섞인 장면, 큰 가림 영역(쓸 수 있는 픽셀이 22%까지 줄어든 사진), 정답 조명 문제(D9)가 원인 후보
 
+**색 이름 채점 연습 (보정용 Gehler 190장 · 4,188칸, 최종 숫자 아님)**
+- 정답률: 기준선(고정 보정) 74.1% · Gray World 80.2% · White Patch **64.1%** · **Shades of Gray(p = 3) 86.0%** · 상한선(정답 조명) 95.8%
+- 주 결과 연습 (기준선 대비, 95% 구간): Shades of Gray **+11.8%p [+8.7, +14.9]** · Gray World +6.1%p [+2.9, +9.4] · White Patch −10.1%p [−14.0, −6.1] · 상한선 +21.6%p
+  → Shades of Gray가 기준선과 상한선 사이 간격의 약 55%를 메움. White Patch는 기준선보다 나쁨(각도 오차 6.93° > 기준선 5.31°)
+- **따뜻한 조명(4,000K 미만, 54장)에서 차이가 가장 큼**: 기준선 53.0% → Shades of Gray 79.5% · 상한선 93.0%.
+  주광(134장)은 기준선도 81.9%(고정 보정이 평균 주광에 가까움) → Shades of Gray 88.5%. 푸른 조명은 2장뿐이라 해석 안 함
+- 예측대로 **회색 · 흰색 칸이 가장 많이 틀림** (Shades of Gray 19번 흰색 53% · 20~23번 59~76%, 오답은 대부분 "파랑").
+  회색 칸 채도 중앙값 Shades of Gray 6.0 · Gray World 8.3 · 기준선 11.2 · White Patch 19.7 → "1°당 약 2.4" 예측과 맞음
+- 상한선도 2번(light skin) 52%(오답 "빨강"), 24번 검정 83% → 조명이 아니라 카메라 변환 손실
+
 **채점 규칙 (2026-10-29 확정, 채점 전에 고정)**
 - 지표: 정답률(애매한 칸은 두 이름 모두 정답) + 보조 지표 **이름 일관성**(표준 색에 붙는 이름으로 불린 비율 — 조명 때문에 이름이 흔들리는지)
 - **주 결과**: 보정 3종 각각 vs 기준선, 평가용 전체 24칸 정답률 차이. 나머지는 보조 결과
 - 오차 범위: 평가용 사진 단위 부트스트랩(2,000회, 95%, 카메라별), 방법끼리는 같은 사진으로 짝지어 비교
-- Gehler 조명 그룹: 정답 조명 색온도로 나눔 (4,000K 미만 따뜻함 / 4,000~6,500K 주광 / 6,500K 초과 푸름)
+- Gehler 조명 그룹: 정답 조명 색온도로 나눔 (4,000K 미만 따뜻함 / 4,000~6,500K 주광 / 6,500K 초과 푸름).
+  색온도는 Adobe DNG 카메라 행렬로 계산 (우리 행렬은 화이트밸런스 뒤 값용이라 조명 색이 초록 쪽으로 밀림, D10 보완)
 - 예측: 회색 칸이 가장 많이 틀릴 것 (조명 추정 1° 오차당 회색 칸 채도 약 2.4, 무채색 기준 10 ≈ 약 4°)
 - 조명 추정: 기준선 평균 조명은 카메라별 · Shades of Gray p는 데이터셋별 보정용으로 · White Patch는 채널별 최댓값
 

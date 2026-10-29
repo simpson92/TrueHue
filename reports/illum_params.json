@@ -38,5 +38,38 @@
       "12": 4.532
     },
     "white_patch_median": 6.9343
+  },
+  "cct": {
+    "how": {
+      "1D": "EOS-1Ds",
+      "5D": "EOS 5D"
+    },
+    "rule": "Adobe DNG 행렬(LibRaw colordata.cpp) 역행렬로 정답 조명 → XYZ → xy → McCamy. 1D 사진은 PNG 크기(원본 4082×2718)로 EOS-1Ds (17_check_cct.py)",
+    "median_abs_duv": {
+      "1D": 0.0033,
+      "5D": 0.0011
+    },
+    "calib_group_counts": {
+      "warm": 54,
+      "daylight": 134,
+      "cool": 2
+    }
+  },
+  "baseline": {
+    "rule": "카메라별 보정용 정답 조명을 길이 1로 맞춘 뒤 평균 낸 방향 (D11 결정 1)",
+    "1D": [
+      0.593072,
+      0.698276,
+      0.400844
+    ],
+    "5D": [
+      0.403674,
+      0.769664,
+      0.494636
+    ],
+    "n_images": {
+      "1D": 29,
+      "5D": 161
+    }
   }
 }
