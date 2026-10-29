@@ -8,6 +8,24 @@
 이 프로젝트는 **조명 보정 단계를 하나 추가**하고, 컬러체커가 찍힌 공개 데이터셋으로
 기존 방식(기준선) 대비 정답률이 얼마나 오르는지 **숫자로** 보인다.
 
+## 최종 결과 (2026-10-30, 봉인 평가용 1회 — `reports/final/`)
+
+**주 결과 (미리 정함, D10)**: Gehler-Shi 평가용 378장 · 8,240칸, 전체 24칸 색 이름 정답률
+
+| 방법 | 정답률 [95% 구간] | 기준선 대비 [95% 구간] |
+|---|---|---|
+| 기준선 (조명에 적응하지 않는 고정 보정) | 72.2% [70.4, 73.9] | — |
+| Gray World | 79.9% [78.2, 81.5] | +7.7%p [+5.3, +10.0] |
+| White Patch | 66.6% [64.1, 69.3] | −5.5%p [−8.4, −2.5] |
+| **Shades of Gray (p = 3)** | **85.1%** [83.5, 86.6] | **+12.9%p** [+10.7, +15.1] |
+| 상한선 (정답 조명) | 95.4% [95.0, 95.9] | +23.3%p [+21.6, +24.9] |
+
+- Shades of Gray가 기준선과 상한선 사이 간격의 **55%**를 메운다. 의심 사진 2장을 뺀 376장도 +12.9%p로 같다 (D9)
+- **조명이 평균(주광)에서 멀수록 효과가 크다**: 따뜻한 조명 95장 49.3% → 81.2% (+31.9%p) · 푸른 조명 9장 53.3% → 74.8% (+21.4%p) · 주광 274장 79.7% → 86.6% (+6.9%p)
+- 보정용 연습(86.0% vs 74.1%, +11.8%p)과 거의 같아, 보정용에 맞춰진 결과가 아님
+- 가장 많이 틀리는 칸은 흰색 · 회색(Shades of Gray 56~77%, 오답 대부분 "파랑"). 상한선의 4.6%p 손실은 카메라 변환 한계(2번 light skin 50%)
+- 보조 결과 — SimpleCube++ test 462장 조명 추정 각도 오차 중앙값: Shades of Gray **1.68°** [1.38, 1.98] · Gray World 2.21° · White Patch 2.60°
+
 ## 진행 현황
 
 - [x] 레포·환경 구성
@@ -32,9 +50,9 @@
 - [x] 조명 그룹 색온도 계산 점검 → Adobe DNG 카메라 행렬로 보완 (D10 보완)
 - [x] 색 이름 채점 연습 (보정용 190장) — 정답률 기준선 74.1% · Gray World 80.2% · White Patch 64.1% · Shades of Gray 86.0% · 상한선 95.8%
 - [x] 최종 평가 준비 — 20 · 21 리허설(보정용으로 15 · 19 숫자 그대로 재현) · 잠금(커밋 안 된 변경 · 두 번째 실행 막음), 절차 D12
-- [ ] SimpleCube++ test로 조명 추정 정확도(각도 오차) 최종 평가
-- [ ] 기준선 · 보정 3종 · 상한선 색 이름 채점 (평가용 378장, 1회)
-- [ ] 최종 1회 평가 · 웹 화면(FastAPI) · 리포트
+- [x] SimpleCube++ test 462장 각도 오차 최종 평가 (2026-10-30) — 중앙값 Shades of Gray 1.68° · Gray World 2.21° · White Patch 2.60°
+- [x] 기준선 · 보정 3종 · 상한선 색 이름 채점, 평가용 378장 1회 (2026-10-30) — Shades of Gray 85.1% vs 기준선 72.2% (+12.9%p)
+- [ ] 웹 화면(FastAPI) · 리포트
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
 
 ## 폴더 구조
@@ -131,8 +149,8 @@ cd ../..
 | `src/17_check_cct.py` | (점검) 조명 그룹용 색온도 계산 — 우리 행렬(D10 원안) vs Adobe DNG 카메라 행렬, 흑체 궤적 거리 \|Duv\|로 확인 | `reports/illum_params.json`(cct), 1D = EOS-1Ds · 5D = EOS 5D (D10 보완) |
 | `src/18_estimate_gehler.py` | 기준선 조명(카메라별 평균) 저장 + 사진마다 보정 3종 조명 추정. 평가용은 `--final`로 최종 1회만 | `outputs/illum/gehler_est_calib.csv`, `illum_params.json`(baseline) |
 | `src/19_score_calib.py` | 보정용 190장 색 이름 채점 연습 — 정답률 · 일관성 · 칸별 · 회색 칸 채도 · 주 결과 부트스트랩 | `outputs/scores/calib_patches.csv`, SoG − 기준선 +11.8%p |
-| `src/20_final_simplecube.py` | SimpleCube++ 각도 오차 최종 평가 (보조 결과). `--rehearsal` = train, `--final` = test 1회 (D12) | 리허설 중앙값 1.91 · 1.45 · 2.44, 최종 → `reports/final/simplecube_test.md` |
-| `src/21_final_gehler.py` | Gehler 색 이름 채점 최종 평가 (주 결과). 조명 추정 + 채점 + D10 보고 범위 · 95% 구간 · 의심 2장 제외 376장. `--rehearsal` = 보정용, `--final` = 평가용 1회 (D12) | 리허설 = 19와 같음, 최종 → `reports/final/gehler_test.md` |
+| `src/20_final_simplecube.py` | SimpleCube++ 각도 오차 최종 평가 (보조 결과). `--rehearsal` = train, `--final` = test 1회 (D12) | 리허설 1.91 · 1.45 · 2.44 (= 14 · 15), **최종 2.21 · 1.68 · 2.60** → `reports/final/simplecube_test.md` |
+| `src/21_final_gehler.py` | Gehler 색 이름 채점 최종 평가 (주 결과). 조명 추정 + 채점 + D10 보고 범위 · 95% 구간 · 의심 2장 제외 376장. `--rehearsal` = 보정용, `--final` = 평가용 1회 (D12) | 리허설 = 19, **최종 SoG 85.1% vs 기준선 72.2% (+12.9%p)** → `reports/final/gehler_test.md` |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
