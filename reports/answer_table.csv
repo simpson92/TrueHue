@@ -7,7 +7,7 @@ patch,patch_name,answer,answer_alt,confidence,rg_group,reason
 6,bluish green,초록,파랑,애매,,민트 청록색
 7,orange,주황,,확실,,
 8,purplish blue,파랑,,확실,,파랑과 훨씬 가까움 (margin 14.6)
-9,moderate red,빨강,,거의 확실,빨강,탁한 빨강 - 분홍과도 가까움 (margin 3.8)
+9,moderate red,빨강,,거의 확실,빨강,탁한 빨강 - 색상 18.6도 · 규칙상 가장 가까운 경계는 주황 36도(여유 17.4도)
 10,purple,보라,,확실,,
 11,yellow green,초록,노랑,애매,초록,연두색
 12,orange yellow,주황,노랑,애매,,귤색 황금색
