@@ -22,7 +22,7 @@
 - [x] 중간 점검 · 공통 모듈 정리 (RGB 읽기, 처리 흐름 한 곳으로)
 - [x] 컬러체커 위치 찾는 방법 결정 (정답 색으로 찾기, 처음 보는 30장 중 29장)
 - [x] 중간 점검 데이터 확인 (1D 채널 순서 · 흰색 빈칸 · 정답 조명 의심 사진)
-- [ ] 568장 컬러체커 위치 적용 + 사람 검수
+- [x] 568장 컬러체커 위치 적용 + 사람 검수 (자동 528장 · 손으로 40장 → `reports/chart_boxes.csv`)
 - [ ] 정답표·이름 규칙 확정 (김하민 검토 후, 기준선 채점 전)
 - [ ] 조명 추정 3종(Gray World · White Patch · Shades of Gray) 구현
 - [ ] SimpleCube++로 조명 추정 정확도(각도 오차) 평가
@@ -115,10 +115,13 @@ cd ../..
 | `src/08_fit_color_matrix.py` | 보정용 사진으로 카메라별 3×3 색 변환 행렬 맞추기 | `reports/color_matrix.json`, ΔE 중앙값 5D 2.55 · 1D 5.03 |
 | `src/09_pilot_chart_detect.py` | (시험) 컬러체커 자동 검출 방법 비교 — 정답 색으로 찾기 3차, 처음 보는 30장 중 29장 | `outputs/chart_pilot*/`, 결과는 decisions.md D8 |
 | `src/10_check_camera_white.py` | (점검) 1D 채널 순서 · 흰색 빈칸 원인 · SFU 정답 조명 의심 사진 | 순서 맞음, 9/9장 포화, 의심 3장 (data_notes · D9) |
+| `src/11_detect_charts.py` | 568장 컬러체커 자동 검출(09 3차 방식) → 가림 영역(상자 긴 변 25% 여유) · 30장씩 한눈에 보기 그림 | `outputs/charts/sheet_*.jpg`, `reports/chart_boxes.csv`(처음 한 번만 만듦) |
+| `src/12_fix_charts.py` | (사람) `outputs/charts/to_fix.txt`에 적은 사진만 열어 마우스로 가림 영역 다시 지정 | `reports/chart_boxes.csv` 수정(source = manual), `sheet_fixed.jpg` |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
-`src/namer.py`도 부품이다. 07~10은 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+`src/namer.py`(이름 규칙)와 `src/chart.py`(컬러체커 검출 · 가림 영역)도 부품이다. 07~12는 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+12는 사람이 마우스로 고치는 단계라 `to_fix.txt`에 적은 사진이 없으면 아무것도 하지 않는다.
 
 ```bash
 for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은 스크립트만 순서대로
@@ -134,6 +137,8 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
   → 채점 가능 **12,428 / 13,632 (91.2%)**. 대부분 어두운 색이라 한계로 기록. 흰색 빈칸 9장은 모두 포화
 - **정답 조명 의심 3장** (모두 1D): R·G·B가 서로 다른 회색 칸에서 옴 (Hemrit et al. 2018이 지적한 문제)
   → 표시해 두고 최종 결과를 "568장 전체" · "3장 제외" 두 가지로 보고
+- **컬러체커 위치**: 원본 좌표가 없어 직접 만듦. 자동 검출이 맞은 사진 528 / 568장(93.0%),
+  나머지 40장(검출 실패 2 · 일부만 덮음 · 다른 곳을 덮음 · 그림에서 상자가 안 보임)은 사람이 마우스로 다시 지정 → `reports/chart_boxes.csv`
 
 **정답표**
 - "가장 가까운 대표색"으로 자동으로 정하면 5칸이 틀림 (탁한 색 → 회색) → 사람이 근거를 적어 정함
