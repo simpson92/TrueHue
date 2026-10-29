@@ -168,3 +168,7 @@
 - Shades of Gray (`15_sog_simplecube.py`): p = 1~12 중 중앙값 최소 **p = 3, 1.45°** (trimean 1.79 · 나쁜 25% 7.18).
   그룹별 중앙값 Gray World / p = 3 / White Patch: 자연광 1.94 / 1.43 / 2.12 · 인공조명 1.48 / 1.59 / 6.45 ·
   실외 2.09 / 1.53 / 2.09 · 실내 1.47 / 1.25 / 4.12
+- 95% 구간 (`20_final_simplecube.py --rehearsal`, 사진 단위 부트스트랩): 중앙값 Gray World 1.91 [1.74, 2.10] ·
+  Shades of Gray 1.45 [1.34, 1.59] · White Patch 2.44 [2.27, 2.71]. 중앙값 차이 Shades of Gray − Gray World −0.46° [−0.59, −0.33] ·
+  − White Patch −0.99° [−1.27, −0.80] → train에서는 Shades of Gray가 두 방법보다 확실히 정확.
+  인공조명 89장은 Shades of Gray 1.59 [0.98, 2.13] vs Gray World 1.48 [1.22, 1.86]로 구간이 크게 겹침 (그룹별 짝지은 비교는 하지 않음)

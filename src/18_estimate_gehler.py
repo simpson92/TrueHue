@@ -4,8 +4,8 @@
 #     = "조명에 적응하지 않는 고정 보정". 보정용에서 한 번 정해 reports/illum_params.json "baseline"에 저장
 #   - 보정 3종: Gray World(p=1) · White Patch(p=∞) · Shades of Gray(p는 16이 정한 값) — 가림 영역 · 포화 제외 (D8 · D11)
 #   - 상한선(정답 조명)은 저장할 필요가 없다 (gehler_index.csv에 이미 있음)
-#   - 기본은 보정용 190장. 평가용 378장은 최종 평가 때 딱 한 번:  python src/18_estimate_gehler.py --final  (D5)
-#   결과: outputs/illum/gehler_est_calib.csv (최종 평가 때는 gehler_est_test.csv)
+#   - 보정용 190장만. 평가용 378장의 조명 추정은 21_final_gehler.py --final이 채점과 함께 한 번에 한다 (잠금 포함, D5)
+#   결과: outputs/illum/gehler_est_calib.csv
 #         확인용: 각도 오차 중앙값이 16과 같아야 한다 (같은 사진 · 같은 계산)
 import json
 import sys
@@ -17,9 +17,9 @@ from illuminant import load_methods, sog_many, save_p, summarize, PARAMS
 
 OUT = ROOT / "outputs" / "illum"
 OUT.mkdir(parents=True, exist_ok=True)
-split = "test" if "--final" in sys.argv else "calib"
-if split == "test":
-    print("⚠️ 평가용 378장을 엽니다 — 최종 평가 1회 (D5). 규칙 · 설정은 모두 고정된 상태여야 함")
+split = "calib"
+if "--final" in sys.argv:
+    raise SystemExit("평가용은 여기서 열지 않는다 → python src/21_final_gehler.py --final (조명 추정 + 채점을 한 번에, 잠금 포함)")
 
 # ── 기준선: 보정용 정답 조명으로만 정함 (평가용 실행 때도 보정용 값을 그대로 읽음) ─────
 if split == "calib":

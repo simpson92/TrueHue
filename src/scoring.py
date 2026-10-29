@@ -5,7 +5,10 @@
 #   - 이름 일관성: 칸마다 기준 이름 = name_color(공식 표준 색)과 같은 비율 (D10 결정 1)
 #   - 조명 그룹: 정답 조명 → 색좌표 xy → 색온도(McCamy) → 3그룹 (D10 결정 2, xy 계산은 17이 정한 행렬)
 #   - 오차 범위: 사진 단위 부트스트랩, 카메라별로 따로 뽑기, 짝지은 비교 (D10 결정 3)
+#   - 최종 평가 잠금: 코드 · 설정이 모두 커밋된 상태에서, 한 번만 (D5)
 import json
+import subprocess
+from datetime import datetime
 import numpy as np
 import pandas as pd
 import colour
@@ -92,6 +95,57 @@ def paired_diff(hits_a, hits_b, total, cams):
     return diff, lo, hi
 
 
+def rate_ci(hits, total, cams, sel=None):
+    """정답률과 95% 구간 → (정답률 %, 하한, 상한, 사진 수). sel: 사진 고르기 (그 안에서 카메라별로 뽑기)"""
+    if sel is not None:
+        hits, total, cams = hits[sel], total[sel], cams[sel]
+    if total.sum() == 0:
+        return np.nan, np.nan, np.nan, 0
+    lo, hi = bootstrap_rate(hits, total, cams)
+    return 100 * hits.sum() / total.sum(), lo, hi, len(hits)
+
+
+def boot_median(err, n_boot=N_BOOT, seed=SEED):
+    """각도 오차 중앙값의 95% 구간 (사진 단위, 카메라 1종일 때)"""
+    err = np.asarray(err, float)
+    idx = np.random.default_rng(seed).integers(0, len(err), (n_boot, len(err)))
+    return tuple(np.percentile(np.median(err[idx], axis=1), [2.5, 97.5]))
+
+
+def paired_median_diff(a, b, n_boot=N_BOOT, seed=SEED):
+    """같은 재표본에서 (A 중앙값 − B 중앙값) → (차이, 95% 하한, 상한). 음수면 A가 더 정확"""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    idx = np.random.default_rng(seed).integers(0, len(a), (n_boot, len(a)))
+    d = np.median(a[idx], axis=1) - np.median(b[idx], axis=1)
+    lo, hi = np.percentile(d, [2.5, 97.5])
+    return float(np.median(a) - np.median(b)), lo, hi
+
+
+# ── 최종 평가 잠금 (D5: 평가용은 한 번만) ──────────────────────────
+def final_lock(out_md):
+    """최종 1회 평가 전에 확인 → 지금 커밋 해시를 돌려준다. 조건이 안 맞으면 멈춘다
+
+    ① 이미 실행했으면(결과 파일이 있으면) 멈춤 — 다시 돌려 좋은 숫자를 고르는 일을 막는다
+    ② src · reports · splits에 커밋 안 된 변경이 있으면 멈춤 — 어떤 코드 · 설정으로 평가했는지 커밋 해시로 남기기 위해
+       (reports/final은 최종 결과가 쌓이는 곳이라 빼고 본다)
+    """
+    if out_md.exists():
+        raise SystemExit(f"⛔ 이미 최종 평가를 실행함: {out_md.relative_to(ROOT)}\n"
+                         "   다시 돌려야 한다면 이유를 decisions.md에 먼저 적고 의논할 것 (결과 파일은 지우지 말 것)")
+    git = lambda *a: subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True)
+    st = git("status", "--porcelain", "--", "src", "reports", "splits", ":(exclude)reports/final")
+    if st.returncode != 0:
+        raise SystemExit("⛔ git 상태를 확인할 수 없음 (레포 폴더에서 실행했는지 확인)")
+    if st.stdout.strip():
+        raise SystemExit("⛔ 커밋 안 된 변경이 있음 → 먼저 커밋 · 푸시하고 실행\n" + st.stdout)
+    return git("rev-parse", "--short", "HEAD").stdout.strip()
+
+
+def stamp(mode, commit):
+    """결과 파일 머리에 붙일 한 줄: 언제 · 어떤 커밋으로 · 리허설인지 최종인지"""
+    return f"- 실행: {datetime.now():%Y-%m-%d %H:%M} · 커밋 `{commit}` · {mode}"
+
+
 # ── 조명 그룹: 정답 조명 → 색온도 (D10 결정 2) ────────────────────
 # Adobe DNG Converter의 카메라 행렬 (XYZ → 카메라 원래 RGB, ×10000). LibRaw src/tables/colordata.cpp에서 옮김
 ADOBE = {
@@ -175,4 +229,8 @@ if __name__ == "__main__":
     cams = np.array(["1D"] * 10 + ["5D"] * 40)
     assert paired_diff(h, h, tot, cams) == (0.0, 0.0, 0.0)
     print("정답률 70% 근처 가짜 50장 → 95% 구간", np.round(bootstrap_rate(h, tot, cams), 1))
+    # 4) 중앙값 부트스트랩: 같은 값끼리 비교하면 차이 0
+    e = rng.gamma(2, 1.5, 200)
+    assert paired_median_diff(e, e) == (0.0, 0.0, 0.0)
+    print("가짜 각도 오차 200장 중앙값", round(float(np.median(e)), 2), "→ 95% 구간", np.round(boot_median(e), 2))
     print("✅ scoring.py 부품 점검 통과")
