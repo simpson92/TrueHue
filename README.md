@@ -27,7 +27,9 @@
 - [x] 채점 · 보고 규칙 확정 (이름 일관성 지표 · 조명 그룹 · 오차 범위 · 주 결과, D10) · 조명 추정 설정 확정 (D11)
 - [x] 조명 추정 부품(`illuminant.py`) · Gray World · White Patch 구현
 - [x] SimpleCube++ 보정용(train) 각도 오차 — 중앙값 Gray World 1.91° · White Patch 2.44°
-- [ ] Shades of Gray p 정하기 · Gehler 보정용 각도 오차 (가림 영역 적용)
+- [x] Shades of Gray p 정하기 — SimpleCube++ · Gehler 모두 **p = 3** (`reports/illum_params.json`)
+- [x] Gehler 보정용 각도 오차 (가림 영역 적용) — 중앙값 Gray World 3.72° · Shades of Gray 2.51° · White Patch 6.93°
+- [ ] 기준선 · 상한선 · 보정 3종 색 이름 채점 (보정용으로 먼저 확인)
 - [ ] SimpleCube++ test로 조명 추정 정확도(각도 오차) 최종 평가
 - [ ] 기준선 · 보정 3종 · 상한선 색 이름 채점
 - [ ] 최종 1회 평가 · 웹 화면(FastAPI) · 리포트
@@ -122,11 +124,13 @@ cd ../..
 | `src/12_fix_charts.py` | (사람) `outputs/charts/to_fix.txt`에 적은 사진만 열어 마우스로 가림 영역 다시 지정 | `reports/chart_boxes.csv` 수정(source = manual), `sheet_fixed.jpg` |
 | `src/13_check_suspect_matrix.py` | (점검) 의심 사진 8D5U5541을 빼고 1D 행렬을 다시 맞춰 ΔE 변화 확인 (D9, 처리 흐름은 안 바꿈) | 같은 28장 ΔE 중앙값 4.83 → 4.73, 평균 5.85 → 5.84 |
 | `src/14_illum_simplecube.py` | Gray World · White Patch를 SimpleCube++ train 1,772장에 돌려 각도 오차 (test는 열지 않음) | `outputs/illum/simplecube_train.csv`, 중앙값 1.91° · 2.44° |
+| `src/15_sog_simplecube.py` | Shades of Gray p = 1~12를 SimpleCube++ train에서 비교 → 중앙값 최소 p (D11) | `reports/illum_params.json`(simplecube), p = 3 · 1.45° |
+| `src/16_illum_gehler.py` | Gehler 보정용 190장에서 가림 영역을 빼고 p = 1~12 비교 → 색 이름 채점에 쓸 p (D11) | `reports/illum_params.json`(gehler), p = 3 · 2.51° |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
 `src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray)도 부품이다.
-07~13은 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+07~13 · 16은 02가 만든 `outputs/gehler_index.csv`가 필요하다. Gehler 사진으로 조명을 추정할 때는 `common.load_gehler_image`(포화 + 컬러체커 가림 영역 제외)로만 읽는다.
 12는 사람이 마우스로 고치는 단계라 `to_fix.txt`에 적은 사진이 없으면 아무것도 하지 않는다.
 
 ```bash
@@ -169,6 +173,11 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
 - White Patch는 실내 · 인공조명에서 크게 약함: 인공조명(89장) 6.45° vs Gray World 1.48°, 실내(310장) 4.12° vs 1.47°.
   실외(1,363장)는 둘 다 2.09°
 - 사진별로는 Gray World가 58%에서 더 잘 맞음 → 두 방법의 약점이 달라, 사이 값인 Shades of Gray를 시험할 이유가 된다
+- **Shades of Gray (p = 3)**: SimpleCube++ train 중앙값 **1.45°** (Gray World 1.91° · White Patch 2.44°).
+  인공조명(89장)에서는 1.59°로 Gray World(1.48°)와 비슷하고 White Patch(6.45°)보다 훨씬 나음
+- **Gehler 보정용 190장 (가림 영역 적용)**: 중앙값 Gray World 3.72° · **Shades of Gray(p = 3) 2.51°** · White Patch 6.93°.
+  두 데이터셋 모두 p = 3이 골라졌고, p = 3~5 사이는 중앙값 차이가 0.05° 안팎이라 p 선택에 민감하지 않음
+- Gehler가 SimpleCube++보다 어려움 (2.51° vs 1.45°): 조명이 섞인 장면, 큰 가림 영역(쓸 수 있는 픽셀이 22%까지 줄어든 사진), 정답 조명 문제(D9)가 원인 후보
 
 **채점 규칙 (2026-10-29 확정, 채점 전에 고정)**
 - 지표: 정답률(애매한 칸은 두 이름 모두 정답) + 보조 지표 **이름 일관성**(표준 색에 붙는 이름으로 불린 비율 — 조명 때문에 이름이 흔들리는지)

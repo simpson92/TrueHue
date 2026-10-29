@@ -68,6 +68,34 @@ def load_simplecube_gt(split="train"):
     return {str(k): v for k, v in zip(gt["image"].astype(str), gt[cols].to_numpy())}
 
 
+_CHART_BOXES = None
+
+
+def load_gehler_image(name):
+    """Gehler 사진 → (블랙 레벨 뺀 RGB 실수 배열, 계산에 써도 되는 픽셀 표시)  ← 조명 추정용
+
+    SimpleCube++의 load_simplecube와 같은 규칙 (D3 · D8):
+      ① 원본 값이 포화 기준(3,300)을 넘는 채널이 하나라도 있는 픽셀 표시
+      ② 컬러체커 가림 영역(reports/chart_boxes.csv의 x1, y1, x2, y2) 표시 → 공정성 마스킹
+      ③ 블랙 레벨을 빼고 음수는 0으로
+    가림 영역이 없는 사진은 멈춘다 (컬러체커가 안 가려진 채 조명을 추정하면 안 되므로)
+    """
+    global _CHART_BOXES
+    if _CHART_BOXES is None:
+        _CHART_BOXES = pd.read_csv(ROOT / "reports" / "chart_boxes.csv").set_index("image")
+    raw = read_rgb(GEHLER_DIR / "png" / name).astype(np.float64)
+    sat = np.any(raw > GEHLER_SAT_RAW, axis=2)            # ① 포화
+    box = _CHART_BOXES.loc[name, ["x1", "y1", "x2", "y2"]]
+    if box.isna().any():
+        raise ValueError(f"{name}: 컬러체커 가림 영역이 없음 (reports/chart_boxes.csv 확인)")
+    x1, y1, x2, y2 = box.astype(int)
+    chart = np.zeros(raw.shape[:2], bool)
+    chart[y1:y2, x1:x2] = True                            # ② 가림 영역 (세로 사진도 그대로 잘림)
+    lin = np.clip(raw - GEHLER_BLACK[gehler_camera(name)], 0, None)   # ③ 블랙 레벨
+    valid = ~sat & ~chart
+    return lin, valid
+
+
 def load_gehler_index(split=None):
     """02가 만든 outputs/gehler_index.csv → 사진별 배열 묶음 (dict)
 
