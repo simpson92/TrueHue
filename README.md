@@ -25,8 +25,10 @@
 - [x] 568장 컬러체커 위치 적용 + 사람 검수 (자동 528장 · 손으로 40장 → `reports/chart_boxes.csv`)
 - [x] 정답표·이름 규칙 확정 (2026-10-29 의논, 초안 그대로)
 - [x] 채점 · 보고 규칙 확정 (이름 일관성 지표 · 조명 그룹 · 오차 범위 · 주 결과, D10) · 조명 추정 설정 확정 (D11)
-- [ ] 조명 추정 3종(Gray World · White Patch · Shades of Gray) 구현
-- [ ] SimpleCube++로 조명 추정 정확도(각도 오차) 평가
+- [x] 조명 추정 부품(`illuminant.py`) · Gray World · White Patch 구현
+- [x] SimpleCube++ 보정용(train) 각도 오차 — 중앙값 Gray World 1.91° · White Patch 2.44°
+- [ ] Shades of Gray p 정하기 · Gehler 보정용 각도 오차 (가림 영역 적용)
+- [ ] SimpleCube++ test로 조명 추정 정확도(각도 오차) 최종 평가
 - [ ] 기준선 · 보정 3종 · 상한선 색 이름 채점
 - [ ] 최종 1회 평가 · 웹 화면(FastAPI) · 리포트
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
@@ -118,10 +120,13 @@ cd ../..
 | `src/10_check_camera_white.py` | (점검) 1D 채널 순서 · 흰색 빈칸 원인 · SFU 정답 조명 의심 사진 | 순서 맞음, 9/9장 포화, 의심 3장 (data_notes · D9) |
 | `src/11_detect_charts.py` | 568장 컬러체커 자동 검출(09 3차 방식) → 가림 영역(상자 긴 변 25% 여유) · 30장씩 한눈에 보기 그림 | `outputs/charts/sheet_*.jpg`, `reports/chart_boxes.csv`(처음 한 번만 만듦) |
 | `src/12_fix_charts.py` | (사람) `outputs/charts/to_fix.txt`에 적은 사진만 열어 마우스로 가림 영역 다시 지정 | `reports/chart_boxes.csv` 수정(source = manual), `sheet_fixed.jpg` |
+| `src/13_check_suspect_matrix.py` | (점검) 의심 사진 8D5U5541을 빼고 1D 행렬을 다시 맞춰 ΔE 변화 확인 (D9, 처리 흐름은 안 바꿈) | 같은 28장 ΔE 중앙값 4.83 → 4.73, 평균 5.85 → 5.84 |
+| `src/14_illum_simplecube.py` | Gray World · White Patch를 SimpleCube++ train 1,772장에 돌려 각도 오차 (test는 열지 않음) | `outputs/illum/simplecube_train.csv`, 중앙값 1.91° · 2.44° |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
-`src/namer.py`(이름 규칙)와 `src/chart.py`(컬러체커 검출 · 가림 영역)도 부품이다. 07~12는 02가 만든 `outputs/gehler_index.csv`가 필요하다.
+`src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray)도 부품이다.
+07~13은 02가 만든 `outputs/gehler_index.csv`가 필요하다.
 12는 사람이 마우스로 고치는 단계라 `to_fix.txt`에 적은 사진이 없으면 아무것도 하지 않는다.
 
 ```bash
@@ -138,6 +143,7 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
   → 채점 가능 **12,428 / 13,632 (91.2%)**. 대부분 어두운 색이라 한계로 기록. 흰색 빈칸 9장은 모두 포화
 - **정답 조명 의심 3장** (모두 1D): R·G·B가 서로 다른 회색 칸에서 옴 (Hemrit et al. 2018이 지적한 문제)
   → 표시해 두고 최종 결과를 두 가지로 보고. 평가용에는 2장이라 "평가용 378장" · "의심 2장 제외 376장"
+  → 보정용에 있는 8D5U5541이 1D 행렬에 준 영향은 작음 (13번: 같은 28장 ΔE 중앙값 4.83 → 4.73, 평균 5.85 → 5.84)
 - **컬러체커 위치**: 원본 좌표가 없어 직접 만듦. 자동 검출이 맞은 사진 528 / 568장(93.0%),
   나머지 40장(검출 실패 2 · 일부만 덮음 · 다른 곳을 덮음 · 그림에서 상자가 안 보임)은 사람이 마우스로 다시 지정 → `reports/chart_boxes.csv`
 
@@ -156,6 +162,13 @@ for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은
 - 색 변환: 진한 색(빨강·파랑·보라·귤색)에서 오차가 큼 → 조명을 완벽히 맞힌 상한선도 100%가 아닐 수 있음
 - 1D 오차가 5D의 약 2배: 채널 순서 문제가 아니라 센서 특성 → 리포트에 카메라별 점수를 따로 표기
 - 비교 설계: 기준선(평균 조명 고정) · 보정 3종 · 상한선(정답 조명)을 같은 색 변환·같은 이름 규칙으로 비교
+
+**조명 추정 첫 결과 (보정용 SimpleCube++ train 1,772장, 최종 숫자 아님)**
+- 각도 오차 중앙값 Gray World **1.91°** · White Patch **2.44°** (평균 3.10° · 5.23°, 나쁜 25% 평균 7.63° · 14.43°, 최대 43° · 53°)
+  → 몇몇 사진에서 크게 틀리는 긴 꼬리가 있어 중앙값을 주로 본다
+- White Patch는 실내 · 인공조명에서 크게 약함: 인공조명(89장) 6.45° vs Gray World 1.48°, 실내(310장) 4.12° vs 1.47°.
+  실외(1,363장)는 둘 다 2.09°
+- 사진별로는 Gray World가 58%에서 더 잘 맞음 → 두 방법의 약점이 달라, 사이 값인 Shades of Gray를 시험할 이유가 된다
 
 **채점 규칙 (2026-10-29 확정, 채점 전에 고정)**
 - 지표: 정답률(애매한 칸은 두 이름 모두 정답) + 보조 지표 **이름 일관성**(표준 색에 붙는 이름으로 불린 비율 — 조명 때문에 이름이 흔들리는지)
