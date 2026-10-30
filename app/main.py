@@ -9,6 +9,13 @@
 #   POST /api/upload              ② 내 사진 올리기 → upload_id (서버 메모리에만 잠깐 보관, 디스크에 저장 안 함)
 #   GET  /api/upload/{id}/image   올린 사진 (줄인 것)
 #   POST /api/analyze             {sample 또는 upload_id, x, y (normalized면 0~1 비율)} → status · color_name · baseline_name · estimated_illuminant …
+#   POST /api/live                {camera: 폰 주소(예 192.168.0.12:8080), x, y (0~1 비율)} → 폰에서 한 장 받아 분석 + 그 프레임(JPEG)
+import base64
+import ipaddress
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from collections import OrderedDict
 from pathlib import Path
@@ -22,6 +29,8 @@ STATIC = Path(__file__).parent / "static"
 UPLOADS = OrderedDict()            # upload_id → (sRGB 배열, 추정 조명). 최근 20장만
 MAX_UPLOADS = 20
 MAX_BYTES = 25 * 1024 * 1024
+LIVE_TIMEOUT = 3                   # 폰이 3초 안에 한 장을 못 주면 연결 실패로 본다
+NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # 폰은 같은 와이파이 → 프록시 설정이 있어도 거치지 않음
 
 
 class AnalyzeIn(BaseModel):
@@ -30,6 +39,32 @@ class AnalyzeIn(BaseModel):
     sample: str | None = None
     upload_id: str | None = None
     normalized: bool = False       # True면 x, y가 사진 크기에 대한 비율(0~1) — 화면은 이 방식으로 보냄
+
+
+class LiveIn(BaseModel):
+    camera: str                    # IP Webcam 화면 아래에 나오는 주소 (예: 192.168.0.12:8080 또는 http://192.168.0.12:8080)
+    x: float = 0.5                 # 볼 곳 (프레임 너비 · 높이에 대한 비율, 기본 = 가운데)
+    y: float = 0.5
+
+
+def live_url(camera):
+    """사용자가 넣은 폰 주소 → http://<IP>:<포트>/shot.jpg
+
+    서버가 대신 접속하는 주소이므로 같은 네트워크(사설 IP · 이 PC)만 허용한다. 경로는 항상 /shot.jpg로 고정
+    """
+    text = camera.strip()
+    if "://" not in text:
+        text = "http://" + text
+    u = urllib.parse.urlsplit(text)
+    if u.scheme != "http" or not u.hostname:
+        raise HTTPException(400, "주소는 IP Webcam 화면 아래의 'http://숫자:8080' 형태로 넣어 주세요")
+    try:
+        ip = ipaddress.ip_address(u.hostname)
+    except ValueError:
+        raise HTTPException(400, "주소는 숫자 IP로 넣어 주세요 (예: 192.168.0.12:8080)")
+    if not (ip.is_private or ip.is_loopback):
+        raise HTTPException(400, "같은 와이파이 안의 주소(192.168… · 10… · 172.16~31…)만 쓸 수 있어요")
+    return f"http://{ip}:{u.port or 8080}/shot.jpg"
 
 
 @app.get("/")
@@ -92,3 +127,30 @@ def analyze(req: AnalyzeIn):
     except (KeyError, ValueError) as e:
         raise HTTPException(400, str(e))
     raise HTTPException(400, "sample 또는 upload_id 중 하나가 필요해요")
+
+
+@app.post("/api/live")
+def live(req: LiveIn):
+    """③ 실시간 카메라: 폰에서 지금 한 장을 받아 ② 내 사진 모드와 같은 처리 → 결과 + 그 프레임
+
+    화면이 이 주소를 계속 불러서(한 번 끝나면 다음 요청) 실시간처럼 보인다. 프레임은 저장하지 않는다
+    """
+    url = live_url(req.camera)
+    t0 = time.perf_counter()
+    try:
+        with NO_PROXY.open(url, timeout=LIVE_TIMEOUT) as r:
+            data = r.read(MAX_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise HTTPException(502, "폰 카메라에 연결할 수 없어요 — 주소, 같은 와이파이인지, IP Webcam에서 '서버 시작'을 눌렀는지 확인해 주세요")
+    t1 = time.perf_counter()
+    try:
+        img = engine.load_frame(data)
+    except Exception:
+        raise HTTPException(502, "폰에서 받은 것이 사진이 아니에요 — 주소 끝의 포트(보통 8080)를 확인해 주세요")
+    try:
+        res = engine.analyze_live(img, req.x, req.y)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    t2 = time.perf_counter()
+    frame = "data:image/jpeg;base64," + base64.b64encode(engine.to_jpeg(img)).decode()
+    return {**res, "frame": frame, "timing_ms": {"fetch": round(1000 * (t1 - t0)), "analyze": round(1000 * (t2 - t1))}}

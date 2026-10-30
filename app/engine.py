@@ -4,6 +4,7 @@
 #     → 이름 규칙 · 카메라 행렬 · p · 기준선 조명이 평가와 똑같다 ("이 앱의 정답률 = 평가 숫자"의 근거)
 #   - ① 데이터셋 모드: Gehler 사진 (평가와 같은 처리, 다섯 방법 비교)
 #   - ② 내 사진 모드: 폰 JPG/PNG (sRGB 감마 되돌리기 → Shades of Gray → sRGB 행렬 + D65→D50 순응 → Lab → 이름)
+#   - ③ 실시간 카메라 모드: 폰 IP Webcam의 한 장(shot.jpg)을 ②와 똑같이 처리 (프레임마다 조명 다시 추정)
 # 직접 실행하면(python app/engine.py) 평가 계산과 같은 이름이 나오는지 스스로 점검한다
 import io
 import json
@@ -257,6 +258,30 @@ def analyze_upload(srgb8, illum, x, y, norm=False):
     return {**out, "status": "ok", "reason": None, "color_name": after["name"], "near_name": after["near"],
             "baseline_name": before["name"], "explain": explain, "lab": after["lab"], "swatch": after["hex"],
             "methods": [{"method": "보정 전(사진 그대로)", **before}, {"method": "Shades of Gray로 보정", **after}]}
+
+
+# ── ③ 실시간 카메라 모드 (IP Webcam, 체험용) ─────────────────────────
+#   폰의 IP Webcam이 주는 한 장(shot.jpg)을 ② 내 사진 모드와 똑같이 처리한다 (계산 부품을 새로 만들지 않음)
+LIVE_MAX = 640                              # 실시간은 빠르게: 긴 변 640으로 줄여서 조명 추정 · 화면 표시
+
+
+def load_frame(data):
+    """JPEG 바이트 → 8비트 sRGB 배열 (긴 변 LIVE_MAX 이하)"""
+    im = Image.open(io.BytesIO(data)).convert("RGB")
+    im.thumbnail((LIVE_MAX, LIVE_MAX))
+    return np.asarray(im, dtype=np.uint8).copy()
+
+
+def to_jpeg(rgb8, quality=80):
+    buf = io.BytesIO()
+    Image.fromarray(rgb8).save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def analyze_live(srgb8, x, y):
+    """프레임 한 장 + 비율 좌표(0~1) → ② 와 같은 결과 (mode만 live). 조명은 프레임마다 새로 추정"""
+    res = analyze_upload(srgb8, upload_illum(srgb8), x, y, norm=True)
+    return {**res, "mode": "live"}
 
 
 # ── 직접 실행하면: 평가 계산과 같은지 점검 ──────────────────────────

@@ -35,6 +35,12 @@
   .seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 11px; font: inherit; cursor: pointer; }
   .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
   .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--ink2); }
+  .live-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .live-row input { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); flex: 1; min-width: 200px; }
+  .live-row button { font: inherit; font-weight: 700; padding: 7px 16px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); cursor: pointer; }
+  .live-row button[aria-pressed="true"] { background: transparent; color: var(--ink); }
+  .live-status { font-size: 13px; color: var(--ink2); margin: 8px 0 0; min-height: 1.4em; }
+  .live-status.err { color: var(--warn); font-weight: 700; }
   .drop label { color: var(--accent); font-weight: 700; cursor: pointer; text-decoration: underline; }
   .stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; background: #000; border-radius: 6px; overflow: hidden; cursor: crosshair; }
   .stage img { max-width: 100%; max-height: 70vh; display: block; }
@@ -65,13 +71,14 @@
 <body>
 <header>
   <h1>True<span>Hue</span></h1>
-  <p>조명에 속지 않는 색 이름 — 사진을 고르고, 알고 싶은 곳을 누르세요</p>
+  <p>조명에 속지 않는 색 이름 — 사진을 고르거나 카메라를 켜고, 알고 싶은 곳을 누르세요</p>
 </header>
 <main>
   <section class="panel" aria-label="사진">
     <div class="tabs" role="tablist">
       <button role="tab" id="tab-dataset" aria-selected="true">① 데이터셋 사진 (실험 재현)</button>
       <button role="tab" id="tab-upload" aria-selected="false">② 내 사진 (체험)</button>
+      <button role="tab" id="tab-live" aria-selected="false">③ 실시간 카메라</button>
     </div>
 
     <div id="pane-dataset">
@@ -94,6 +101,17 @@
       <p class="note">체험용입니다. 휴대폰 사진은 이미 자동 화이트밸런스가 되어 있어, 평가 숫자(정답률)와는 관계가 없어요. 사진 대부분이 한 가지 색이면 보정이 틀릴 수 있어요. 올린 사진은 서버 메모리에만 잠깐 있고 저장되지 않아요.</p>
     </div>
 
+    <div id="pane-live" hidden>
+      <div class="live-row">
+        <input id="cam" placeholder="폰 주소 (예: 192.168.0.12:8080)" aria-label="IP Webcam 주소" autocomplete="off">
+        <button id="live-toggle" aria-pressed="false">시작</button>
+      </div>
+      <p class="live-status" id="live-status" role="status"></p>
+      <p class="note">폰에서 IP Webcam을 열고 맨 아래 <b>서버 시작</b>을 누른 뒤, 폰 화면 아래에 나오는 주소를 넣으세요. PC와 폰이 같은 와이파이여야 해요.
+        보정 효과를 보려면 IP Webcam 설정에서 <b>화이트 밸런스를 '자동'이 아닌 값(예: 주광)으로 고정</b>하세요 — 자동이면 폰이 이미 보정해서 보정 전 · 후가 거의 같아요.
+        화면을 누르면 그곳을 계속 봐요(처음엔 가운데). 체험용이라 평가 숫자와는 관계없어요.</p>
+    </div>
+
     <div style="margin-top:10px">
       <div class="stage" id="stage" hidden>
         <img id="photo" alt="고른 사진 — 누른 곳의 색 이름을 오른쪽에 보여 줍니다">
@@ -113,18 +131,20 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [] };
+const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [],
+                live: { on: false, x: 0.5, y: 0.5, frames: 0 } };
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 function setMode(mode) {
+  if (mode !== "live") liveStop();
   state.mode = mode;
-  $("tab-dataset").setAttribute("aria-selected", mode === "dataset");
-  $("tab-upload").setAttribute("aria-selected", mode === "upload");
-  $("pane-dataset").hidden = mode !== "dataset";
-  $("pane-upload").hidden = mode !== "upload";
+  for (const m of ["dataset", "upload", "live"]) {
+    $("tab-" + m).setAttribute("aria-selected", mode === m);
+    $("pane-" + m).hidden = mode !== m;
+  }
   $("roi").style.display = "none";
-  showEmpty();
+  showEmpty(mode === "live" ? "폰 주소를 넣고 <b>시작</b>을 누르면<br>화면 가운데(또는 누른 곳)의 색 이름이 계속 나와요." : "");
   if (mode === "dataset" && state.sample) showPhoto(`/api/sample/${encodeURIComponent(state.sample)}/image?view=${state.view}`);
   else if (mode === "upload" && state.uploadId) showPhoto(`/api/upload/${state.uploadId}/image`);
   else $("stage").hidden = true;
@@ -236,8 +256,53 @@ function render(j) {
   $("result").innerHTML = html;
 }
 
+// ── ③ 실시간 카메라: 한 장 받아 분석 → 화면 갱신 → 다음 장 (요청이 끝나야 다음을 보내서 밀리지 않음) ──
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+function liveStatus(msg, err) { $("live-status").textContent = msg; $("live-status").className = "live-status" + (err ? " err" : ""); }
+
+async function liveStart() {
+  const cam = $("cam").value.trim();
+  if (!cam) { liveStatus("폰 주소를 넣어 주세요 (IP Webcam 화면 아래의 주소)", true); return; }
+  try { localStorage.setItem("truehue-cam", cam); } catch (e) {}
+  state.live.on = true; state.live.frames = 0;
+  $("live-toggle").textContent = "멈춤"; $("live-toggle").setAttribute("aria-pressed", "true");
+  $("result").setAttribute("aria-live", "off");          // 계속 바뀌는 결과를 화면 낭독기가 매번 읽지 않게
+  liveStatus("폰에 연결하는 중…");
+  while (state.live.on && state.mode === "live") {
+    const t0 = performance.now();
+    let r, j;
+    try {
+      r = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
+                                     body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y }) });
+      j = await r.json();
+    } catch (e) { r = null; j = { detail: "웹 서버에 연결할 수 없어요 (uvicorn이 켜져 있나요?)" }; }
+    if (!state.live.on || state.mode !== "live") break;
+    if (!r || !r.ok) { liveStatus(j.detail || "오류가 났어요", true); liveStop(true); break; }
+    showPhoto(j.frame);
+    drawRoi(j);
+    render(j);
+    state.live.frames += 1;
+    const fps = 1000 / (performance.now() - t0);
+    liveStatus(`연결됨 · ${state.live.frames}장째 · 약 ${fps.toFixed(1)}장/초 (폰에서 받기 ${j.timing_ms.fetch}ms · 계산 ${j.timing_ms.analyze}ms)`);
+    await sleep(30);
+  }
+}
+
+function liveStop(keepMsg) {
+  if (!state.live.on) return;
+  state.live.on = false;
+  $("live-toggle").textContent = "시작"; $("live-toggle").setAttribute("aria-pressed", "false");
+  $("result").setAttribute("aria-live", "polite");
+  if (!keepMsg) liveStatus(`멈춤 · 마지막 장의 결과를 보여 주고 있어요`);
+}
+
+$("live-toggle").onclick = () => state.live.on ? liveStop() : liveStart();
+$("cam").onkeydown = (e) => { if (e.key === "Enter" && !state.live.on) liveStart(); };
+try { $("cam").value = localStorage.getItem("truehue-cam") || ""; } catch (e) {}
+
 $("tab-dataset").onclick = () => setMode("dataset");
 $("tab-upload").onclick = () => setMode("upload");
+$("tab-live").onclick = () => setMode("live");
 $("filter").oninput = (e) => fillSamples(e.target.value);
 $("sample").onchange = (e) => pickSample(e.target.value);
 $("view-baseline").onclick = () => setView("baseline");
@@ -245,7 +310,9 @@ $("view-corrected").onclick = () => setView("corrected");
 $("file").onchange = (e) => upload(e.target.files[0]);
 $("photo").onclick = (e) => {
   const r = e.target.getBoundingClientRect();
-  analyze((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+  const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+  if (state.mode === "live") { state.live.x = fx; state.live.y = fy; return; }   // 다음 장부터 이곳을 본다
+  analyze(fx, fy);
 };
 loadSamples();
 </script>
