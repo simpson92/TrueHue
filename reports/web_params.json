@@ -1,0 +1,11 @@
+{
+  "hint": {
+    "chroma": 7.0,
+    "hue": 3.0,
+    "L": 3.0,
+    "rule": "보정용 190장 SoG(p=3) 결과에서, 여유 < t인 칸의 틀린 비율이 30% 이상인 가장 큰 t (칸 20개 이상). 웹 표시용, 이름 규칙 · 평가와 무관 (22_check_hint.py)",
+    "flagged_share": 0.257,
+    "error_flagged": 0.296,
+    "error_unflagged": 0.087
+  }
+}

@@ -52,6 +52,7 @@
 - [x] 최종 평가 준비 — 20 · 21 리허설(보정용으로 15 · 19 숫자 그대로 재현) · 잠금(커밋 안 된 변경 · 두 번째 실행 막음), 절차 D12
 - [x] SimpleCube++ test 462장 각도 오차 최종 평가 (2026-10-30) — 중앙값 Shades of Gray 1.68° · Gray World 2.21° · White Patch 2.60°
 - [x] 기준선 · 보정 3종 · 상한선 색 이름 채점, 평가용 378장 1회 (2026-10-30) — Shades of Gray 85.1% vs 기준선 72.2% (+12.9%p)
+- [x] 웹 화면 설정 (D13) · "가까운 이름" 기준 — 채도 여유 < 7 · 색상 < 3° · 밝기 < 3 (보정용, 22)
 - [ ] 웹 화면(FastAPI) · 리포트
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
 
@@ -151,10 +152,11 @@ cd ../..
 | `src/19_score_calib.py` | 보정용 190장 색 이름 채점 연습 — 정답률 · 일관성 · 칸별 · 회색 칸 채도 · 주 결과 부트스트랩 | `outputs/scores/calib_patches.csv`, SoG − 기준선 +11.8%p |
 | `src/20_final_simplecube.py` | SimpleCube++ 각도 오차 최종 평가 (보조 결과). `--rehearsal` = train, `--final` = test 1회 (D12) | 리허설 1.91 · 1.45 · 2.44 (= 14 · 15), **최종 2.21 · 1.68 · 2.60** → `reports/final/simplecube_test.md` |
 | `src/21_final_gehler.py` | Gehler 색 이름 채점 최종 평가 (주 결과). 조명 추정 + 채점 + D10 보고 범위 · 95% 구간 · 의심 2장 제외 376장. `--rehearsal` = 보정용, `--final` = 평가용 1회 (D12) | 리허설 = 19, **최종 SoG 85.1% vs 기준선 72.2% (+12.9%p)** → `reports/final/gehler_test.md` |
+| `src/22_check_hint.py` | 웹 "○○에 가까움" 표시 기준 — 보정용 SoG 결과에서 경계 여유별 틀린 비율 (D13) | `reports/web_params.json`, 채도 < 7 · 색상 < 3° · 밝기 < 3 |
 
 `src/common.py`(경로·규칙 숫자·데이터 읽기, 사진은 RGB로)와 `src/pipeline.py`(조명 → 노출 → 행렬 → Lab → 이름)는
 다른 스크립트가 불러다 쓰는 부품이라 직접 실행하지 않는다 (`python src/common.py`는 채널 순서 자기 점검).
-`src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray), `src/scoring.py`(채점 · 일관성 · 조명 그룹 · 부트스트랩, `python src/scoring.py`는 자기 점검)도 부품이다.
+`src/namer.py`(이름 규칙), `src/chart.py`(컬러체커 검출 · 가림 영역), `src/illuminant.py`(조명 추정: p=1 Gray World · p=∞ White Patch · 그 사이 Shades of Gray), `src/scoring.py`(채점 · 일관성 · 조명 그룹 · 부트스트랩, `python src/scoring.py`는 자기 점검), `src/hint.py`(웹 "가까운 이름" 표시, 이름 규칙은 안 바꿈)도 부품이다.
 07~13 · 16~19는 02가 만든 `outputs/gehler_index.csv`가 필요하다. Gehler 사진으로 조명을 추정할 때는 `common.load_gehler_image`(포화 + 컬러체커 가림 영역 제외)로만 읽는다.
 19는 17 · 18을 먼저 실행해야 한다 (조명 그룹 행렬 · 추정 조명).
 20 · 21은 `--rehearsal` 또는 `--final`을 붙여야 돈다 (아무것도 없으면 사용법만 출력). `--final`은 커밋 안 된 변경이 있거나 이미 실행했으면 멈춘다 (D12).
