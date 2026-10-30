@@ -53,7 +53,8 @@
 - [x] SimpleCube++ test 462장 각도 오차 최종 평가 (2026-10-30) — 중앙값 Shades of Gray 1.68° · Gray World 2.21° · White Patch 2.60°
 - [x] 기준선 · 보정 3종 · 상한선 색 이름 채점, 평가용 378장 1회 (2026-10-30) — Shades of Gray 85.1% vs 기준선 72.2% (+12.9%p)
 - [x] 웹 화면 설정 (D13) · "가까운 이름" 기준 — 채도 여유 < 7 · 색상 < 3° · 밝기 < 3 (보정용, 22)
-- [ ] 웹 화면(FastAPI) · 리포트
+- [x] 웹 화면 (FastAPI, `app/`) — 데이터셋 모드(실험 재현) · 내 사진 모드(체험), 평가 계산과 같은 이름 600 / 600 (`python app/engine.py`)
+- [ ] 내 사진 모드 실제 폰 사진 확인 · 리포트 · 발표
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
 
 ## 폴더 구조
@@ -67,7 +68,7 @@ TrueHue/
 ├── src/           # 전처리·보정·채점 스크립트 (번호 순서대로 실행)
 ├── notebooks/     # 중간 결과 확인용 Jupyter
 ├── reports/       # 데이터 노트, 결정 기록, 정답표, 비교 리포트
-├── app/           # 웹 화면 (예정)
+├── app/           # 웹 화면 (FastAPI: engine.py 계산 · main.py 서버 · static/index.html 화면, D13)
 └── outputs/       # 실행 결과물 (gitignore, 스크립트로 다시 생성)
 ```
 
@@ -165,6 +166,24 @@ cd ../..
 ```bash
 for f in src/[0-9]*.py; do echo "== $f"; python "$f"; done    # 번호가 붙은 스크립트만 순서대로
 ```
+
+## 웹 화면 실행
+
+```bash
+pip install -r requirements.txt          # fastapi · uvicorn · python-multipart 포함
+python app/engine.py                     # 자기 점검: 웹 계산이 평가 계산과 같은지 (✅ 600 / 600)
+uvicorn app.main:app --port 8000         # 레포 폴더에서 → 브라우저로 http://localhost:8000 (WSL이면 Windows 브라우저)
+```
+
+| 모드 | 사진 | 처리 | 보여 주는 것 |
+|---|---|---|---|
+| ① 데이터셋 (실험 재현) | `data/`의 Gehler 568장 중 고르기 | 평가와 완전히 같음 (블랙 레벨 · 포화 · 컬러체커 가림 · 카메라 행렬 · 컬러체커 밝기) | Shades of Gray 이름 · 가까운 이름 · 기준선 이름 · 추정 조명(K) · 다섯 방법 비교 · 보정 전/후 그림 |
+| ② 내 사진 (체험) | JPG/PNG 올리기 (서버 메모리에만, 저장 안 함) | sRGB 감마 되돌리기 → Shades of Gray → sRGB 행렬 + D65 → D50 순응 | 보정 전(사진 그대로) vs 보정 후 이름 · 남은 색 기운 |
+
+- 포화되거나 너무 어두운 곳은 "판단하기 어려워요", 이름 경계 근처는 "○○에 가까움"을 함께 보여 준다 (D13, 기준은 22)
+- 이름 규칙 · 카메라 행렬 · p · 기준선 조명은 평가와 똑같이 쓴다 → "정답률 85.1%"가 이 앱의 숫자
+- ①은 `data/`와 `outputs/gehler_index.csv`(02)가 있어야 한다. 없으면 ②만 쓸 수 있다
+- API: `POST /api/analyze` (`sample` 또는 `upload_id`, `x`, `y`) → `status` · `color_name` · `near_name` · `baseline_name` · `estimated_illuminant` · `explain` · `methods`
 
 ## 지금까지의 주요 발견
 

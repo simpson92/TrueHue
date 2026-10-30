@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrueHue — 조명에 속지 않는 색 이름</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1b1d22; --ink2: #4e4d49; --muted: #807f7a; --line: #e2e0da;
+    --accent: #c8102e; --accent-ink: #ffffff; --ok: #1f6f50; --warn: #a35a00; --focus: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171a; --panel: #1f2125; --ink: #f1f0ec; --ink2: #c9c7c0; --muted: #9a9890; --line: #34363c;
+            --accent: #ff5a6e; --accent-ink: #16171a; --ok: #5fc79b; --warn: #f0a640; --focus: #6aa8ff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; font-size: 16px; line-height: 1.55; }
+  header { padding: 18px 24px 10px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 26px; letter-spacing: -0.01em; }
+  header h1 span { color: var(--accent); }
+  header p { margin: 0; color: var(--ink2); }
+  main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 18px; padding: 8px 24px 24px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 8px 16px 20px; } header { padding: 14px 16px 6px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tabs button { flex: 1; padding: 10px 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; font: inherit; font-weight: 700; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .controls input[type=search], .controls select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+  .controls input[type=search] { width: 150px; }
+  .controls select { min-width: 190px; flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 11px; font: inherit; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+  .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--ink2); }
+  .drop label { color: var(--accent); font-weight: 700; cursor: pointer; text-decoration: underline; }
+  .stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; background: #000; border-radius: 6px; overflow: hidden; cursor: crosshair; }
+  .stage img { max-width: 100%; max-height: 70vh; display: block; }
+  .roi { position: absolute; border: 2px solid #fff; box-shadow: 0 0 0 2px #000; pointer-events: none; display: none; }
+  .hint-line { color: var(--ink2); font-size: 14px; margin: 8px 0 0; }
+  .note { font-size: 13px; color: var(--ink2); background: color-mix(in srgb, var(--warn) 10%, transparent); border-left: 3px solid var(--warn); padding: 7px 10px; border-radius: 4px; margin-top: 10px; }
+  .empty { color: var(--muted); padding: 30px 6px; text-align: center; }
+  .result .label { font-size: 13px; color: var(--muted); margin: 0; }
+  .result .name { font-size: 46px; font-weight: 800; line-height: 1.15; margin: 2px 0 2px; letter-spacing: -0.02em; }
+  .result .near { font-size: 18px; color: var(--ink2); margin: 0 0 10px; }
+  .swatch { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; }
+  .swatch i { width: 46px; height: 46px; border-radius: 8px; border: 1px solid var(--line); flex: none; }
+  .swatch span { font-size: 13px; color: var(--ink2); }
+  .row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row b { font-weight: 700; }
+  .row .k { color: var(--ink2); }
+  .explain { margin: 10px 0 0; padding: 9px 11px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 9%, transparent); border-left: 3px solid var(--accent); }
+  .status-uncertain .name { font-size: 26px; color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tr.main td { font-weight: 800; }
+  td .dot { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); vertical-align: -1px; margin-right: 6px; }
+  footer { padding: 0 24px 24px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 900px) { footer { padding: 0 16px 20px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>True<span>Hue</span></h1>
+  <p>조명에 속지 않는 색 이름 — 사진을 고르고, 알고 싶은 곳을 누르세요</p>
+</header>
+<main>
+  <section class="panel" aria-label="사진">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-dataset" aria-selected="true">① 데이터셋 사진 (실험 재현)</button>
+      <button role="tab" id="tab-upload" aria-selected="false">② 내 사진 (체험)</button>
+    </div>
+
+    <div id="pane-dataset">
+      <div class="controls">
+        <input type="search" id="filter" placeholder="이름 찾기 (예: IMG_03)" aria-label="사진 이름으로 찾기">
+        <select id="sample" aria-label="데이터셋 사진 고르기"></select>
+        <span class="seg" role="group" aria-label="사진 보기">
+          <button id="view-baseline" aria-pressed="true">보정 전</button>
+          <button id="view-corrected" aria-pressed="false">보정 후</button>
+        </span>
+      </div>
+      <p class="hint-line" id="dataset-msg">Gehler-Shi 사진에 평가와 똑같은 처리를 합니다. 컬러체커 칸을 누르면 채점에 쓴 결과와 같은 이름이 나와요.</p>
+    </div>
+
+    <div id="pane-upload" hidden>
+      <div class="drop">
+        <input type="file" id="file" accept="image/jpeg,image/png" hidden>
+        사진을 <label for="file">골라서 올리기</label> (JPG · PNG)
+      </div>
+      <p class="note">체험용입니다. 휴대폰 사진은 이미 자동 화이트밸런스가 되어 있어, 평가 숫자(정답률)와는 관계가 없어요. 사진 대부분이 한 가지 색이면 보정이 틀릴 수 있어요. 올린 사진은 서버 메모리에만 잠깐 있고 저장되지 않아요.</p>
+    </div>
+
+    <div style="margin-top:10px">
+      <div class="stage" id="stage" hidden>
+        <img id="photo" alt="고른 사진 — 누른 곳의 색 이름을 오른쪽에 보여 줍니다">
+        <div class="roi" id="roi"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel result" id="result" aria-live="polite" aria-label="결과">
+    <p class="empty">사진에서 알고 싶은 곳을 누르면<br>여기에 색 이름이 나와요.</p>
+  </section>
+</main>
+<footer>
+  평가 결과 (Gehler-Shi 봉인 평가용 378장): 조명을 보정하면 색 이름 정답률 <b>85.1%</b>, 보정하지 않으면(고정 보정) 72.2% — 따뜻한 조명에서는 49.3% → 81.2%.
+  이름 규칙 · 보정 방법은 평가와 같습니다. 이름은 항상 글자로 보여 주고, 색 견본은 화면에 따라 다르게 보일 수 있어요.
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [] };
+
+function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function setMode(mode) {
+  state.mode = mode;
+  $("tab-dataset").setAttribute("aria-selected", mode === "dataset");
+  $("tab-upload").setAttribute("aria-selected", mode === "upload");
+  $("pane-dataset").hidden = mode !== "dataset";
+  $("pane-upload").hidden = mode !== "upload";
+  $("roi").style.display = "none";
+  showEmpty();
+  if (mode === "dataset" && state.sample) showPhoto(`/api/sample/${encodeURIComponent(state.sample)}/image?view=${state.view}`);
+  else if (mode === "upload" && state.uploadId) showPhoto(`/api/upload/${state.uploadId}/image`);
+  else $("stage").hidden = true;
+}
+
+function showEmpty(msg) {
+  $("result").className = "panel result";
+  $("result").innerHTML = `<p class="empty">${msg || "사진에서 알고 싶은 곳을 누르면<br>여기에 색 이름이 나와요."}</p>`;
+}
+
+function showPhoto(src) {
+  $("stage").hidden = false;
+  $("photo").src = src;
+}
+
+async function loadSamples() {
+  const r = await fetch("/api/samples").then(r => r.json());
+  if (!r.available) {
+    $("dataset-msg").textContent = r.message;
+    $("sample").disabled = true;
+    return;
+  }
+  state.samples = r.samples;
+  fillSamples("");
+}
+
+function fillSamples(q) {
+  const list = state.samples.filter(s => s.name.toLowerCase().includes(q.toLowerCase()));
+  $("sample").innerHTML = list.map(s => `<option value="${esc(s.name)}">${esc(s.name)} · ${esc(s.camera)} · ${esc(s.split)}</option>`).join("");
+  if (list.length && !list.some(s => s.name === state.sample)) pickSample(list[0].name);
+}
+
+function pickSample(name) {
+  state.sample = name;
+  $("sample").value = name;
+  $("roi").style.display = "none";
+  showEmpty();
+  showPhoto(`/api/sample/${encodeURIComponent(name)}/image?view=${state.view}`);
+}
+
+function setView(view) {
+  state.view = view;
+  $("view-baseline").setAttribute("aria-pressed", view === "baseline");
+  $("view-corrected").setAttribute("aria-pressed", view === "corrected");
+  if (state.sample) showPhoto(`/api/sample/${encodeURIComponent(state.sample)}/image?view=${view}`);
+}
+
+async function upload(file) {
+  if (!file) return;
+  showEmpty("사진을 올리는 중…");
+  const fd = new FormData();
+  fd.append("file", file);
+  const r = await fetch("/api/upload", { method: "POST", body: fd });
+  const j = await r.json();
+  if (!r.ok) { showEmpty(esc(j.detail)); return; }
+  state.uploadId = j.upload_id;
+  $("roi").style.display = "none";
+  showPhoto(`/api/upload/${j.upload_id}/image`);
+  showEmpty();
+}
+
+async function analyze(fx, fy) {
+  const body = { x: fx, y: fy, normalized: true };
+  if (state.mode === "dataset") body.sample = state.sample; else body.upload_id = state.uploadId;
+  const r = await fetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) { showEmpty(esc(j.detail)); return; }
+  drawRoi(j);
+  render(j);
+}
+
+function drawRoi(j) {
+  const [x1, y1, x2, y2] = j.roi, [w, h] = j.image_size;
+  const box = $("roi");
+  box.style.left = (100 * x1 / w) + "%";
+  box.style.top = (100 * y1 / h) + "%";
+  box.style.width = Math.max(1.2, 100 * (x2 - x1) / w) + "%";
+  box.style.height = Math.max(1.2, 100 * (y2 - y1) / h) + "%";
+  box.style.display = "block";
+}
+
+function render(j) {
+  const il = j.estimated_illuminant;
+  const ilText = il.cct ? `${esc(il.label)} · 약 ${il.cct.toLocaleString()}K` : esc(il.label);
+  if (j.status !== "ok") {
+    $("result").className = "panel result status-uncertain";
+    $("result").innerHTML = `<p class="label">판단</p><p class="name">${esc(j.message)}</p>
+      <p class="near">조금 옆을 누르거나, 더 밝은 · 덜 밝은 곳을 골라 보세요.</p>
+      <div class="row"><span class="k">${j.mode === "dataset" ? "추정한 조명" : "사진"}</span><b>${ilText}</b></div>`;
+    return;
+  }
+  const near = j.near_name ? `<p class="near">${esc(j.near_name)}에 가까움</p>` : `<p class="near">&nbsp;</p>`;
+  let html = `<p class="label">조명을 보정한 색 이름</p>
+    <p class="name">${esc(j.color_name)}</p>${near}
+    <div class="swatch"><i style="background:${esc(j.swatch)}"></i><span>보정한 색 견본 (화면 근사)<br>밝기 ${j.lab.L} · 채도 ${j.lab.C} · 색상 ${j.lab.h}°</span></div>
+    <div class="row"><span class="k">${j.mode === "dataset" ? "보정하지 않았다면 (고정 보정)" : "보정하지 않았다면 (사진 그대로)"}</span><b>${esc(j.baseline_name)}</b></div>
+    <div class="row"><span class="k">${j.mode === "dataset" ? "추정한 조명" : "사진"}</span><b>${ilText}</b></div>`;
+  if (j.baseline_illuminant && j.baseline_illuminant.cct)
+    html += `<div class="row"><span class="k">고정 보정이 가정한 조명</span><b>약 ${j.baseline_illuminant.cct.toLocaleString()}K</b></div>`;
+  if (j.explain) html += `<p class="explain">${esc(j.explain)}</p>`;
+  if (j.methods && j.methods.length) {
+    html += `<table><caption class="label" style="text-align:left;padding-bottom:4px">${j.mode === "dataset" ? "방법별 이름 (평가와 같은 처리)" : "비교"}</caption>
+      <thead><tr><th>방법</th><th>이름</th><th>가까운 이름</th></tr></thead><tbody>` +
+      j.methods.map(m => `<tr class="${/Shades/.test(m.method) ? "main" : ""}"><td>${esc(m.method)}</td>
+        <td><span class="dot" style="background:${esc(m.hex)}" aria-hidden="true"></span>${esc(m.name)}</td><td>${esc(m.near || "")}</td></tr>`).join("") +
+      `</tbody></table>`;
+  }
+  $("result").className = "panel result";
+  $("result").innerHTML = html;
+}
+
+$("tab-dataset").onclick = () => setMode("dataset");
+$("tab-upload").onclick = () => setMode("upload");
+$("filter").oninput = (e) => fillSamples(e.target.value);
+$("sample").onchange = (e) => pickSample(e.target.value);
+$("view-baseline").onclick = () => setView("baseline");
+$("view-corrected").onclick = () => setView("corrected");
+$("file").onchange = (e) => upload(e.target.files[0]);
+$("photo").onclick = (e) => {
+  const r = e.target.getBoundingClientRect();
+  analyze((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+};
+loadSamples();
+</script>
+</body>
+</html>
