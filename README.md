@@ -66,7 +66,6 @@ TrueHue/
 │   └── simplecube/    # SimpleCube++/ train · test · auxiliary
 ├── splits/        # 보정용 / 봉인 평가용 사진 목록
 ├── src/           # 전처리·보정·채점 스크립트 (번호 순서대로 실행)
-├── notebooks/     # 중간 결과 확인용 Jupyter
 ├── reports/       # 데이터 노트, 결정 기록, 정답표, 비교 리포트
 ├── app/           # 웹 화면 (FastAPI: engine.py 계산 · main.py 서버 · static/index.html 화면, D13)
 └── outputs/       # 실행 결과물 (gitignore, 스크립트로 다시 생성)
