@@ -37,8 +37,8 @@
   .drop { border: 2px dashed var(--line); border-radius: 8px; padding: 14px; text-align: center; color: var(--ink2); }
   .live-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .live-row input { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); flex: 1; min-width: 200px; }
-  .live-row button { font: inherit; font-weight: 700; padding: 7px 16px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); cursor: pointer; }
-  .live-row button[aria-pressed="true"] { background: transparent; color: var(--ink); }
+  #live-toggle { font: inherit; font-weight: 700; padding: 7px 16px; border-radius: 6px; border: 1px solid var(--ink); background: var(--ink); color: var(--panel); cursor: pointer; }
+  #live-toggle[aria-pressed="true"] { background: transparent; color: var(--ink); }
   .live-status { font-size: 13px; color: var(--ink2); margin: 8px 0 0; min-height: 1.4em; }
   .live-status.err { color: var(--warn); font-weight: 700; }
   .white-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
@@ -105,6 +105,13 @@
         <input type="file" id="file" accept="image/jpeg,image/png" hidden>
         사진을 <label for="file">골라서 올리기</label> (JPG · PNG)
       </div>
+      <div class="controls" style="margin-top:10px">
+        <span class="seg" role="group" aria-label="내 사진 보기">
+          <button id="up-before" aria-pressed="true">보정 전</button>
+          <button id="up-after" aria-pressed="false">보정 후</button>
+        </span>
+        <span class="hint-line" style="margin:0">보정 후 = 사진 전체에서 조명 색 기운을 뺀 그림 (이름 계산과 같은 식)</span>
+      </div>
       <p class="note">체험용입니다. 휴대폰 사진은 이미 자동 화이트밸런스가 되어 있어, 평가 숫자(정답률)와는 관계가 없어요. 사진 대부분이 한 가지 색이면 보정이 틀릴 수 있어요. 올린 사진은 서버 메모리에만 잠깐 있고 저장되지 않아요.</p>
     </div>
 
@@ -112,6 +119,10 @@
       <div class="live-row">
         <input id="cam" placeholder="폰 주소 (예: 192.168.0.12:8080)" aria-label="IP Webcam 주소" autocomplete="off">
         <button id="live-toggle" aria-pressed="false">시작</button>
+        <span class="seg" role="group" aria-label="카메라 화면 보기">
+          <button id="lv-before" aria-pressed="true">보정 전</button>
+          <button id="lv-after" aria-pressed="false">보정 후</button>
+        </span>
       </div>
       <p class="live-status" id="live-status" role="status"></p>
       <div class="white-row">
@@ -145,8 +156,9 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [],
-                live: { on: false, x: 0.5, y: 0.5, frames: 0, white: null } };
+const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [], upView: "before",
+                live: { on: false, x: 0.5, y: 0.5, frames: 0, white: null, view: "before" } };
+const uploadSrc = () => `/api/upload/${state.uploadId}/image?view=${state.upView}`;
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
@@ -160,7 +172,7 @@ function setMode(mode) {
   $("roi").style.display = "none";
   showEmpty(mode === "live" ? "폰 주소를 넣고 <b>시작</b>을 누르면<br>화면 가운데(또는 누른 곳)의 색 이름이 계속 나와요." : "");
   if (mode === "dataset" && state.sample) showPhoto(`/api/sample/${encodeURIComponent(state.sample)}/image?view=${state.view}`);
-  else if (mode === "upload" && state.uploadId) showPhoto(`/api/upload/${state.uploadId}/image`);
+  else if (mode === "upload" && state.uploadId) showPhoto(uploadSrc());
   else $("stage").hidden = true;
 }
 
@@ -216,7 +228,7 @@ async function upload(file) {
   if (!r.ok) { showEmpty(esc(j.detail)); return; }
   state.uploadId = j.upload_id;
   $("roi").style.display = "none";
-  showPhoto(`/api/upload/${j.upload_id}/image`);
+  showPhoto(uploadSrc());
   showEmpty();
 }
 
@@ -289,7 +301,7 @@ async function liveStart() {
     let r, j;
     try {
       r = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
-                                     body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y, white: state.live.white }) });
+                                     body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y, white: state.live.white, view: state.live.view }) });
       try { j = await r.json(); } catch (e) { j = { detail: `서버 안에서 오류가 났어요 (${r.status}) — uvicorn 터미널의 빨간 글씨를 확인해 주세요` }; r = null; }
     } catch (e) { r = null; j = { detail: "웹 서버에 연결할 수 없어요 (uvicorn이 켜져 있나요?)" }; }
     if (!state.live.on || state.mode !== "live") break;
@@ -352,6 +364,21 @@ $("white-force").onclick = () => { if (whiteCand) whiteUse(whiteCand, " · 확�
 $("live-toggle").onclick = () => state.live.on ? liveStop() : liveStart();
 $("cam").onkeydown = (e) => { if (e.key === "Enter" && !state.live.on) liveStart(); };
 try { $("cam").value = localStorage.getItem("truehue-cam") || ""; } catch (e) {}
+
+// 보정 전 / 보정 후 그림 (② 내 사진 · ③ 실시간). ③은 다음 장부터 바뀐다
+function setUpView(v) {
+  state.upView = v;
+  $("up-before").setAttribute("aria-pressed", v === "before"); $("up-after").setAttribute("aria-pressed", v === "after");
+  if (state.uploadId) showPhoto(uploadSrc());
+}
+function setLiveView(v) {
+  state.live.view = v;
+  $("lv-before").setAttribute("aria-pressed", v === "before"); $("lv-after").setAttribute("aria-pressed", v === "after");
+}
+$("up-before").onclick = () => setUpView("before");
+$("up-after").onclick = () => setUpView("after");
+$("lv-before").onclick = () => setLiveView("before");
+$("lv-after").onclick = () => setLiveView("after");
 
 $("tab-dataset").onclick = () => setMode("dataset");
 $("tab-upload").onclick = () => setMode("upload");

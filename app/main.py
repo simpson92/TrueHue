@@ -7,7 +7,7 @@
 #   GET  /api/samples             ① 데이터셋 모드 사진 목록 (data/에 Gehler가 있을 때)
 #   GET  /api/sample/{name}/image ?view=baseline|corrected  화면용 그림
 #   POST /api/upload              ② 내 사진 올리기 → upload_id (서버 메모리에만 잠깐 보관, 디스크에 저장 안 함)
-#   GET  /api/upload/{id}/image   올린 사진 (줄인 것)
+#   GET  /api/upload/{id}/image   ?view=before|after  올린 사진 (줄인 것) · 보정 후 그림
 #   POST /api/analyze             {sample 또는 upload_id, x, y (normalized면 0~1 비율)} → status · color_name · baseline_name · estimated_illuminant …
 #   POST /api/live                {camera: 폰 주소(예 192.168.0.12:8080), x, y (0~1 비율), white(선택)} → 폰에서 한 장 받아 분석 + 그 프레임(JPEG)
 #   POST /api/live/white          {camera, x, y} → 그 자리의 흰 종이를 재서 기준(white) 또는 거절 이유. 기준은 화면이 들고 있다가 /api/live에 보냄
@@ -53,6 +53,7 @@ class LiveIn(BaseModel):
     x: float = 0.5                 # 볼 곳 (프레임 너비 · 높이에 대한 비율, 기본 = 가운데)
     y: float = 0.5
     white: WhiteRef | None = None  # 흰 종이 기준 (없으면 Shades of Gray)
+    view: str = "before"           # 돌려줄 프레임: before = 찍힌 그대로 · after = 보정한 그림
 
 
 def live_url(camera):
@@ -116,10 +117,15 @@ async def upload(file: UploadFile = File(...)):
 
 
 @app.get("/api/upload/{uid}/image")
-def upload_image(uid: str):
+def upload_image(uid: str, view: str = "before"):
+    if view not in ("before", "after"):
+        raise HTTPException(400, "view는 before 또는 after")
     if uid not in UPLOADS:
         raise HTTPException(404, "사진이 없어요 (서버를 다시 켰다면 다시 올려 주세요)")
-    return Response(engine.to_png(UPLOADS[uid][0]), media_type="image/png")
+    img, illum = UPLOADS[uid]
+    if view == "after":
+        img = engine.correct_image(img, illum)
+    return Response(engine.to_jpeg(img, quality=90), media_type="image/jpeg")
 
 
 @app.post("/api/analyze")
@@ -181,7 +187,8 @@ def live(req: LiveIn):
     except ValueError as e:
         raise HTTPException(400, str(e))
     analyze_ms = round(1000 * (time.perf_counter() - t1))
-    frame = "data:image/jpeg;base64," + base64.b64encode(engine.to_jpeg(img)).decode()
+    shown = engine.correct_image(img, illum, white) if req.view == "after" else img
+    frame = "data:image/jpeg;base64," + base64.b64encode(engine.to_jpeg(shown)).decode()
     return {**res, "frame": frame, "timing_ms": {"fetch": fetch_ms, "analyze": analyze_ms}}
 
 

@@ -226,6 +226,23 @@ def upload_illum(srgb8):
     return sog_many(lin, valid, [p])[p]
 
 
+def correct_image(srgb8, illum, white=None):
+    """사진 전체를 보정한 화면용 그림 (8비트 sRGB) — ② · ③의 '보정 후' 보기
+
+    색 이름 계산과 같은 식: 선형으로 바꿔 조명 이득으로 나눔 (Shades of Gray: G는 그대로 / 흰 종이: 종이가 Y = WHITE_Y가 되게).
+    화면 표시용이라 sRGB 그대로 둔다 (이름 계산의 D65 → D50 순응은 Lab으로 갈 때만 필요)
+    """
+    lin = colour.cctf_decoding(srgb8.astype(np.float32) / 255, function="sRGB")
+    if white is not None:
+        lin = lin / np.asarray(white["ref"], np.float32) * WHITE_Y
+    elif illum is not None and np.all(np.isfinite(illum)) and np.max(illum) > 0:
+        lin = lin / gains(illum).astype(np.float32)
+    else:
+        return srgb8                                   # 조명을 모르면 그대로
+    out = colour.cctf_encoding(np.clip(lin, 0, 1), function="sRGB")
+    return (out * 255 + 0.5).astype(np.uint8)
+
+
 def cast_info(illum):
     """② 남은 색 기운 → 글자 (폰이 이미 화이트밸런스를 했으므로 K로 말하지 않음, D13)"""
     e = np.asarray(illum, float)
