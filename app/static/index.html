@@ -41,6 +41,13 @@
   .live-row button[aria-pressed="true"] { background: transparent; color: var(--ink); }
   .live-status { font-size: 13px; color: var(--ink2); margin: 8px 0 0; min-height: 1.4em; }
   .live-status.err { color: var(--warn); font-weight: 700; }
+  .white-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+  .white-row button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+  .white-row button:disabled { opacity: .45; cursor: default; }
+  .white-row .w-msg { font-size: 13px; color: var(--ink2); }
+  .white-row .w-msg.on { color: var(--ok); font-weight: 700; }
+  .white-row .w-msg.err { color: var(--warn); font-weight: 700; }
+  .warnline { margin: 10px 0 0; padding: 8px 10px; border-radius: 6px; font-size: 14px; background: color-mix(in srgb, var(--warn) 12%, transparent); border-left: 3px solid var(--warn); }
   .drop label { color: var(--accent); font-weight: 700; cursor: pointer; text-decoration: underline; }
   .stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; background: #000; border-radius: 6px; overflow: hidden; cursor: crosshair; }
   .stage img { max-width: 100%; max-height: 70vh; display: block; }
@@ -107,8 +114,15 @@
         <button id="live-toggle" aria-pressed="false">시작</button>
       </div>
       <p class="live-status" id="live-status" role="status"></p>
+      <div class="white-row">
+        <button id="white-set" disabled>흰 종이로 맞추기</button>
+        <button id="white-force" hidden>그래도 쓰기</button>
+        <button id="white-clear" disabled>기준 지우기</button>
+        <span class="w-msg" id="white-msg" role="status">흰 종이를 네모 안에 꽉 차게 비추고 누르면, 그 종이로 조명 색과 밝기를 맞춰요</span>
+      </div>
+      <p class="hint-line">흰 종이 기준은 <b>평가하지 않은 기능</b>이에요. 평가 숫자(85.1%)는 자동 보정(Shades of Gray) 기준이에요. 종이와 물건이 같은 빛을 받아야 해요.</p>
       <p class="note">폰에서 IP Webcam을 열고 맨 아래 <b>서버 시작</b>을 누른 뒤, 폰 화면 아래에 나오는 주소를 넣으세요. PC와 폰이 같은 와이파이여야 해요.
-        보정 효과를 보려면 IP Webcam 설정에서 <b>화이트 밸런스를 '자동'이 아닌 값(예: 주광)으로 고정</b>하세요 — 자동이면 폰이 이미 보정해서 보정 전 · 후가 거의 같아요.
+        보정 효과를 보려면 IP Webcam(폰)의 <b>⋮ → 영상 관련 → 화이트 밸런스</b>를 '자동'이 아닌 값(예: 주광)으로 고정하세요 — 자동이면 폰이 이미 보정해서 보정 전 · 후가 거의 같아요.
         화면을 누르면 그곳을 계속 봐요(처음엔 가운데). 체험용이라 평가 숫자와는 관계없어요.</p>
     </div>
 
@@ -132,7 +146,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [],
-                live: { on: false, x: 0.5, y: 0.5, frames: 0 } };
+                live: { on: false, x: 0.5, y: 0.5, frames: 0, white: null } };
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
@@ -237,7 +251,7 @@ function render(j) {
     return;
   }
   const near = j.near_name ? `<p class="near">${esc(j.near_name)}에 가까움</p>` : `<p class="near">&nbsp;</p>`;
-  let html = `<p class="label">조명을 보정한 색 이름</p>
+  let html = `<p class="label">${j.white_used ? "흰 종이 기준으로 보정한 색 이름" : "조명을 보정한 색 이름"}</p>
     <p class="name">${esc(j.color_name)}</p>${near}
     <div class="swatch"><i style="background:${esc(j.swatch)}"></i><span>보정한 색 견본 (화면 근사)<br>밝기 ${j.lab.L} · 채도 ${j.lab.C} · 색상 ${j.lab.h}°</span></div>
     <div class="row"><span class="k">${j.mode === "dataset" ? "보정하지 않았다면 (고정 보정)" : "보정하지 않았다면 (사진 그대로)"}</span><b>${esc(j.baseline_name)}</b></div>
@@ -245,10 +259,11 @@ function render(j) {
   if (j.baseline_illuminant && j.baseline_illuminant.cct)
     html += `<div class="row"><span class="k">고정 보정이 가정한 조명</span><b>약 ${j.baseline_illuminant.cct.toLocaleString()}K</b></div>`;
   if (j.explain) html += `<p class="explain">${esc(j.explain)}</p>`;
+  if (j.white_warning) html += `<p class="warnline">${esc(j.white_warning)}</p>`;
   if (j.methods && j.methods.length) {
     html += `<table><caption class="label" style="text-align:left;padding-bottom:4px">${j.mode === "dataset" ? "방법별 이름 (평가와 같은 처리)" : "비교"}</caption>
       <thead><tr><th>방법</th><th>이름</th><th>가까운 이름</th></tr></thead><tbody>` +
-      j.methods.map(m => `<tr class="${/Shades/.test(m.method) ? "main" : ""}"><td>${esc(m.method)}</td>
+      j.methods.map(m => `<tr class="${(m.main ?? /Shades/.test(m.method)) ? "main" : ""}"><td>${esc(m.method)}</td>
         <td><span class="dot" style="background:${esc(m.hex)}" aria-hidden="true"></span>${esc(m.name)}</td><td>${esc(m.near || "")}</td></tr>`).join("") +
       `</tbody></table>`;
   }
@@ -265,6 +280,7 @@ async function liveStart() {
   if (!cam) { liveStatus("폰 주소를 넣어 주세요 (IP Webcam 화면 아래의 주소)", true); return; }
   try { localStorage.setItem("truehue-cam", cam); } catch (e) {}
   state.live.on = true; state.live.frames = 0;
+  $("white-set").disabled = false;
   $("live-toggle").textContent = "멈춤"; $("live-toggle").setAttribute("aria-pressed", "true");
   $("result").setAttribute("aria-live", "off");          // 계속 바뀌는 결과를 화면 낭독기가 매번 읽지 않게
   liveStatus("폰에 연결하는 중…");
@@ -273,7 +289,7 @@ async function liveStart() {
     let r, j;
     try {
       r = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
-                                     body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y }) });
+                                     body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y, white: state.live.white }) });
       j = await r.json();
     } catch (e) { r = null; j = { detail: "웹 서버에 연결할 수 없어요 (uvicorn이 켜져 있나요?)" }; }
     if (!state.live.on || state.mode !== "live") break;
@@ -291,10 +307,47 @@ async function liveStart() {
 function liveStop(keepMsg) {
   if (!state.live.on) return;
   state.live.on = false;
+  $("white-set").disabled = true;
   $("live-toggle").textContent = "시작"; $("live-toggle").setAttribute("aria-pressed", "false");
   $("result").setAttribute("aria-live", "polite");
+  whiteCand = null; $("white-force").hidden = true;
   if (!keepMsg) liveStatus(`멈춤 · 마지막 장의 결과를 보여 주고 있어요`);
 }
+
+// 흰 종이 기준: 지금 보고 있는 곳(네모)의 종이를 재서 기준을 받는다. 거절되면 이유를 보여 주고 기준은 그대로
+function whiteMsg(msg, cls) { $("white-msg").textContent = msg; $("white-msg").className = "w-msg" + (cls ? " " + cls : ""); }
+let whiteCand = null;                                     // "확인 필요"일 때 그래도 쓸 수 있는 기준 후보
+function whiteUse(j, note) {
+  state.live.white = { ref: j.ref, sog: j.sog };
+  whiteCand = null; $("white-force").hidden = true;
+  whiteMsg(`흰 종이 기준 사용 중 (${new Date().toLocaleTimeString()} 맞춤${note || ""})`, "on");
+  $("white-clear").disabled = false;
+}
+async function whiteSet() {
+  $("white-set").disabled = true;
+  whiteCand = null; $("white-force").hidden = true;
+  whiteMsg("종이를 재는 중…");
+  try {
+    const r = await fetch("/api/live/white", { method: "POST", headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ camera: $("cam").value.trim(), x: state.live.x, y: state.live.y }) });
+    const j = await r.json();
+    if (!r.ok) whiteMsg(j.detail || "오류가 났어요", "err");
+    else if (!j.ok) {
+      drawRoi(j); whiteMsg(j.message, "err");
+      if (j.confirm) { whiteCand = j; $("white-force").hidden = false; }   // ④ · ⑤: 사용자가 확인하고 쓸 수 있음
+    }
+    else { drawRoi(j); whiteUse(j); }
+  } catch (e) { whiteMsg("웹 서버에 연결할 수 없어요", "err"); }
+  $("white-set").disabled = !state.live.on;
+}
+function whiteClear() {
+  state.live.white = null;
+  $("white-clear").disabled = true;
+  whiteMsg("기준을 지웠어요 — 다시 Shades of Gray(자동 추정)로 보정해요");
+}
+$("white-set").onclick = whiteSet;
+$("white-clear").onclick = whiteClear;
+$("white-force").onclick = () => { if (whiteCand) whiteUse(whiteCand, " · 확인하고 씀"); };
 
 $("live-toggle").onclick = () => state.live.on ? liveStop() : liveStart();
 $("cam").onkeydown = (e) => { if (e.key === "Enter" && !state.live.on) liveStart(); };

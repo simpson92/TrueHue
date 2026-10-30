@@ -238,7 +238,8 @@ def cast_info(illum):
             "angle": round(ang, 1)}
 
 
-def analyze_upload(srgb8, illum, x, y, norm=False):
+def analyze_upload(srgb8, illum, x, y, norm=False, white=None):
+    """white = 흰 종이 기준 {"ref": 종이의 선형 RGB} (③ 실시간에서 맞췄을 때) → 큰 이름을 흰 종이 기준으로"""
     h, w = srgb8.shape[:2]
     if norm:
         x, y = x * w, y * h
@@ -252,17 +253,34 @@ def analyze_upload(srgb8, illum, x, y, norm=False):
     lin = colour.cctf_decoding(roi8.astype(float) / 255, function="sRGB").mean(axis=0)   # 선형으로 바꾼 뒤 평균
     before = describe(to_lab(SRGB_TO_XYZ50 @ lin))                                       # 보정 전 = 사진 그대로
     after = describe(to_lab(SRGB_TO_XYZ50 @ (lin / gains(illum))))                       # Shades of Gray로 보정
+    methods = [{"method": "보정 전(사진 그대로)", **before}, {"method": "Shades of Gray로 보정", **after, "main": white is None}]
+    main = after
+    if white is not None:
+        # 흰 종이 기준: 종이 색 = 조명 색, 종이 밝기 = 컬러체커 흰색(19번)과 같은 Y로 → 색과 밝기를 함께 맞춤
+        main = describe(to_lab(SRGB_TO_XYZ50 @ (lin / np.asarray(white["ref"], float) * WHITE_Y)))
+        methods.append({"method": "흰 종이 기준으로 보정", **main, "main": True})
     explain = None
-    if before["name"] != after["name"]:
+    if before["name"] != main["name"]:
         explain = f"사진에 남은 색 기운 때문에 보정 전에는 '{before['name']}'{josa_ro(before['name'])} 보였어요"
-    return {**out, "status": "ok", "reason": None, "color_name": after["name"], "near_name": after["near"],
-            "baseline_name": before["name"], "explain": explain, "lab": after["lab"], "swatch": after["hex"],
-            "methods": [{"method": "보정 전(사진 그대로)", **before}, {"method": "Shades of Gray로 보정", **after}]}
+    return {**out, "status": "ok", "reason": None, "color_name": main["name"], "near_name": main["near"],
+            "baseline_name": before["name"], "explain": explain, "lab": main["lab"], "swatch": main["hex"],
+            "white_used": white is not None, "methods": methods}
 
 
 # ── ③ 실시간 카메라 모드 (IP Webcam, 체험용) ─────────────────────────
 #   폰의 IP Webcam이 주는 한 장(shot.jpg)을 ② 내 사진 모드와 똑같이 처리한다 (계산 부품을 새로 만들지 않음)
 LIVE_MAX = 640                              # 실시간은 빠르게: 긴 변 640으로 줄여서 조명 추정 · 화면 표시
+# 흰 종이 기준 (웹 표시용 값 — 평가 숫자와 무관, 써 보고 바꿀 수 있음)
+LIVE_ALPHA = 0.3                            # 조명 추정을 장마다 30%씩만 새 값으로 (나머지는 이전 값) → 깜빡임 줄임
+LIVE_RESET = 10.0                           # 새 추정이 10° 넘게 다르면 섞지 않고 바로 바꿈
+WHITE_R = 20                                # 종이를 재는 영역: 41×41 픽셀 (640 프레임 기준)
+WHITE_Y = 0.90                              # 종이 밝기를 컬러체커 흰색(19번, Y ≈ 0.90)과 같다고 봄
+WHITE_CLIP_FRAC = 0.02                      # ① 영역의 2% 이상이 포화면 거절
+WHITE_MIN = 0.10                            # ② 가장 밝은 채널 선형 평균 < 0.10 (8비트 약 89)이면 거절
+WHITE_CV = 0.15                             # ③ 밝기 변동 15% 넘으면 거절
+WHITE_ANGLE = 10.0                          # ④ 자동 추정과 10° 넘게 다르면 확인 필요 (Gehler 평가용 SoG 오차 중앙값 2.4°)
+WHITE_REL = 0.5                             # ⑤ 장면의 밝은 곳(상위 2%)의 절반보다 어두우면 회색 물체일 수 있어 확인 필요
+WHITE_DRIFT = 8.0                           # ⑥ 맞춘 뒤 자동 추정이 8° 넘게 변하면 다시 맞추라고 알림
 
 
 def load_frame(data):
@@ -278,10 +296,90 @@ def to_jpeg(rgb8, quality=80):
     return buf.getvalue()
 
 
-def analyze_live(srgb8, x, y):
-    """프레임 한 장 + 비율 좌표(0~1) → ② 와 같은 결과 (mode만 live). 조명은 프레임마다 새로 추정"""
-    res = analyze_upload(srgb8, upload_illum(srgb8), x, y, norm=True)
-    return {**res, "mode": "live"}
+def angle_deg(a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    return float(np.degrees(np.arccos(np.clip(a @ b / (np.linalg.norm(a) * np.linalg.norm(b)), -1, 1))))
+
+
+def smooth_illum(prev, new, alpha=LIVE_ALPHA, reset=LIVE_RESET):
+    """이전 프레임까지의 조명(방향)과 새 추정을 섞는다 → 장마다 흔들리는 것을 줄임
+
+    새 추정이 reset° 넘게 다르면(장면 · 조명이 바뀜) 섞지 않고 새 값으로 바로 바꾼다 (늦게 따라가지 않게)
+    """
+    new = np.asarray(new, float)
+    new = new / np.linalg.norm(new)
+    if prev is None or not np.all(np.isfinite(new)):
+        return new
+    prev = np.asarray(prev, float)
+    if angle_deg(prev, new) > reset:
+        return new
+    mix = (1 - alpha) * prev + alpha * new
+    return mix / np.linalg.norm(mix)
+
+
+def analyze_live(srgb8, x, y, white=None, illum=None):
+    """프레임 한 장 + 비율 좌표(0~1) → ② 와 같은 결과 (mode만 live). 조명은 프레임마다 새로 추정
+
+    white = {"ref": 종이 선형 RGB, "sog": 맞출 때의 자동 추정} → 흰 종이 기준으로 이름. 자동 추정이 맞출 때와
+    WHITE_DRIFT° 넘게 달라지면 "조명이나 장면이 바뀐 것 같다"고 알린다 (안전장치 ⑥)
+    """
+    if illum is None:
+        illum = upload_illum(srgb8)
+    res = analyze_upload(srgb8, illum, x, y, norm=True, white=white)
+    res = {**res, "mode": "live", "white_warning": None}
+    if white is not None:
+        drift = angle_deg(illum, white["sog"])
+        if drift > WHITE_DRIFT:
+            res["white_warning"] = f"흰 종이를 맞춘 뒤 조명이나 장면이 바뀐 것 같아요 (자동 추정이 {drift:.0f}° 달라짐) — 다시 맞추면 더 정확해요"
+            res["explain"] = None          # 기준이 낡았을 수 있으니 "보정 전에는 ~로 보였어요" 설명은 빼고 경고만
+    return res
+
+
+def measure_white(srgb8, x, y):
+    """③ 흰 종이로 맞추기: 비율 좌표(0~1) 둘레 넓은 영역 → 종이 색(선형 RGB) 또는 거절 이유 (안전장치 ①~③ 거절 · ④⑤ 확인 필요)
+
+    ① 포화: 영역의 WHITE_CLIP_FRAC 이상이 250 이상 → 색 비율이 잘려 틀어짐
+    ② 어두움: 가장 밝은 채널 선형 평균 < WHITE_MIN → 잡음이 커서 조명 색을 믿기 어려움
+    ③ 고르지 않음: 밝기 변동(표준편차 / 평균) > WHITE_CV → 글씨 · 경계 · 그림자가 섞임
+    ①~③은 측정 자체를 믿을 수 없어 거절. ④ · ⑤는 "확인 필요"(confirm) — 기준 후보를 함께 돌려주고, 사용자가 '그래도 쓰기'로 고를 수 있다
+    (자동 추정이 틀린 장면 = 흰 종이 기준이 가장 필요한 장면이라 막지 않음, 10/30 의논)
+    ④ 흰색 아닐 수 있음: 종이 색과 장면 자동 추정(Shades of Gray) 방향이 WHITE_ANGLE° 넘게 다름 → 크림색 · 베이지 · 색 있는 물체일 가능성
+    ⑤ 회색 물체일 수 있음: 장면의 밝은 곳(포화 뺀 밝기 상위 2%)의 WHITE_REL 배보다 어두움 → 밝기 기준이 틀어짐
+    """
+    h, w = srgb8.shape[:2]
+    x1, y1, x2, y2 = roi_box(x * w, y * h, w, h, r=WHITE_R)
+    roi8 = srgb8[y1:y2, x1:x2].reshape(-1, 3)
+    out = {"roi": [x1, y1, x2, y2], "image_size": [w, h]}
+    clip = float(np.mean(np.any(roi8 >= JPG_CLIP, axis=1)))
+    if clip >= WHITE_CLIP_FRAC:
+        return {**out, "ok": False, "reason": "too_bright",
+                "message": f"종이가 너무 밝아 하얗게 날아갔어요 (영역의 {clip:.0%}) — 조명을 등지거나 폰을 조금 멀리 해 주세요"}
+    lin = colour.cctf_decoding(roi8.astype(float) / 255, function="sRGB")
+    ref = lin.mean(axis=0)
+    if ref.max() < WHITE_MIN:
+        return {**out, "ok": False, "reason": "too_dark", "message": "종이가 너무 어두워요 — 더 밝은 곳에서 맞춰 주세요"}
+    lum = lin @ np.array([0.2126, 0.7152, 0.0722])
+    cv = float(lum.std() / lum.mean())
+    if cv > WHITE_CV:
+        return {**out, "ok": False, "reason": "not_uniform",
+                "message": f"네모 안이 고르지 않아요 (글씨 · 경계 · 그림자, 변동 {cv:.0%}) — 흰 부분만 네모에 꽉 차게 비춰 주세요"}
+    sog = upload_illum(srgb8)
+    ang = angle_deg(ref, sog)
+    cand = {"ref": [float(v) for v in ref], "sog": [float(v) for v in sog]}
+    if ang > WHITE_ANGLE:
+        return {**out, **cand, "ok": False, "confirm": True, "reason": "not_white",
+                "message": f"흰색이 아닐 수도 있어요 (자동 추정과 {ang:.0f}° 다름). 크림색 · 베이지는 기준으로 쓰면 색이 틀어져요 — "
+                           f"흰 종이가 맞으면 '그래도 쓰기'를 누르세요 (한 가지 색이 화면을 채우면 자동 추정이 틀려서 이렇게 보일 수 있어요)"}
+    full = colour.cctf_decoding(srgb8.astype(float) / 255, function="sRGB")
+    keep = ~np.any(srgb8 >= JPG_CLIP, axis=2)
+    bright = float(np.percentile(full[keep] @ np.array([0.2126, 0.7152, 0.0722]), 98)) if keep.any() else lum.mean()
+    if lum.mean() < WHITE_REL * bright:
+        return {**out, **cand, "ok": False, "confirm": True, "reason": "not_white_gray",
+                "message": f"장면의 밝은 곳보다 많이 어두워요 ({lum.mean() / bright:.0%}) — 회색 물체면 밝기가 틀어져요. "
+                           f"흰 종이가 맞으면 '그래도 쓰기'를 누르세요"}
+    return {**out, **cand, "ok": True, "confirm": False, "reason": None,
+            "checks": {"clip": round(clip, 3), "cv": round(cv, 3), "angle": round(ang, 1)},
+            "message": "흰 종이 기준으로 맞췄어요"}
 
 
 # ── 직접 실행하면: 평가 계산과 같은지 점검 ──────────────────────────

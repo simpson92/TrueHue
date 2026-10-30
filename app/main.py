@@ -9,7 +9,8 @@
 #   POST /api/upload              ② 내 사진 올리기 → upload_id (서버 메모리에만 잠깐 보관, 디스크에 저장 안 함)
 #   GET  /api/upload/{id}/image   올린 사진 (줄인 것)
 #   POST /api/analyze             {sample 또는 upload_id, x, y (normalized면 0~1 비율)} → status · color_name · baseline_name · estimated_illuminant …
-#   POST /api/live                {camera: 폰 주소(예 192.168.0.12:8080), x, y (0~1 비율)} → 폰에서 한 장 받아 분석 + 그 프레임(JPEG)
+#   POST /api/live                {camera: 폰 주소(예 192.168.0.12:8080), x, y (0~1 비율), white(선택)} → 폰에서 한 장 받아 분석 + 그 프레임(JPEG)
+#   POST /api/live/white          {camera, x, y} → 그 자리의 흰 종이를 재서 기준(white) 또는 거절 이유. 기준은 화면이 들고 있다가 /api/live에 보냄
 import base64
 import ipaddress
 import time
@@ -30,6 +31,7 @@ UPLOADS = OrderedDict()            # upload_id → (sRGB 배열, 추정 조명).
 MAX_UPLOADS = 20
 MAX_BYTES = 25 * 1024 * 1024
 LIVE_TIMEOUT = 3                   # 폰이 3초 안에 한 장을 못 주면 연결 실패로 본다
+LIVE_ILLUM = {}                    # 폰 주소 → 지금까지 부드럽게 한 조명 (깜빡임 줄이기, engine.smooth_illum)
 NO_PROXY = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # 폰은 같은 와이파이 → 프록시 설정이 있어도 거치지 않음
 
 
@@ -41,10 +43,16 @@ class AnalyzeIn(BaseModel):
     normalized: bool = False       # True면 x, y가 사진 크기에 대한 비율(0~1) — 화면은 이 방식으로 보냄
 
 
+class WhiteRef(BaseModel):
+    ref: list[float]               # 흰 종이의 선형 RGB (measure_white가 준 값)
+    sog: list[float]               # 맞출 때의 장면 자동 추정 (조명이 바뀌었는지 비교용)
+
+
 class LiveIn(BaseModel):
     camera: str                    # IP Webcam 화면 아래에 나오는 주소 (예: 192.168.0.12:8080 또는 http://192.168.0.12:8080)
     x: float = 0.5                 # 볼 곳 (프레임 너비 · 높이에 대한 비율, 기본 = 가운데)
     y: float = 0.5
+    white: WhiteRef | None = None  # 흰 종이 기준 (없으면 Shades of Gray)
 
 
 def live_url(camera):
@@ -129,28 +137,56 @@ def analyze(req: AnalyzeIn):
     raise HTTPException(400, "sample 또는 upload_id 중 하나가 필요해요")
 
 
-@app.post("/api/live")
-def live(req: LiveIn):
-    """③ 실시간 카메라: 폰에서 지금 한 장을 받아 ② 내 사진 모드와 같은 처리 → 결과 + 그 프레임
-
-    화면이 이 주소를 계속 불러서(한 번 끝나면 다음 요청) 실시간처럼 보인다. 프레임은 저장하지 않는다
-    """
-    url = live_url(req.camera)
+def fetch_frame(camera):
+    """폰에서 지금 한 장 → (8비트 sRGB 배열, 받는 데 걸린 ms)"""
+    url = live_url(camera)
     t0 = time.perf_counter()
     try:
         with NO_PROXY.open(url, timeout=LIVE_TIMEOUT) as r:
             data = r.read(MAX_BYTES + 1)
     except (urllib.error.URLError, TimeoutError, OSError):
         raise HTTPException(502, "폰 카메라에 연결할 수 없어요 — 주소, 같은 와이파이인지, IP Webcam에서 '서버 시작'을 눌렀는지 확인해 주세요")
-    t1 = time.perf_counter()
+    ms = round(1000 * (time.perf_counter() - t0))
     try:
-        img = engine.load_frame(data)
+        return engine.load_frame(data), ms
     except Exception:
         raise HTTPException(502, "폰에서 받은 것이 사진이 아니에요 — 주소 끝의 포트(보통 8080)를 확인해 주세요")
+
+
+def check_white(w):
+    if w is None:
+        return None
+    vals = w.ref + w.sog
+    if len(w.ref) != 3 or len(w.sog) != 3 or not all(v > 0 and v < 10 for v in vals):
+        raise HTTPException(400, "흰 종이 기준 값이 이상해요 — '기준 지우기' 후 다시 맞춰 주세요")
+    return {"ref": w.ref, "sog": w.sog}
+
+
+@app.post("/api/live")
+def live(req: LiveIn):
+    """③ 실시간 카메라: 폰에서 지금 한 장을 받아 ② 내 사진 모드와 같은 처리 → 결과 + 그 프레임
+
+    화면이 이 주소를 계속 불러서(한 번 끝나면 다음 요청) 실시간처럼 보인다. 프레임은 저장하지 않는다
+    """
+    white = check_white(req.white)
+    img, fetch_ms = fetch_frame(req.camera)
+    t1 = time.perf_counter()
     try:
-        res = engine.analyze_live(img, req.x, req.y)
+        illum = engine.smooth_illum(LIVE_ILLUM.get(req.camera), engine.upload_illum(img))
+        LIVE_ILLUM[req.camera] = illum
+        res = engine.analyze_live(img, req.x, req.y, white=white, illum=illum)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    t2 = time.perf_counter()
+    analyze_ms = round(1000 * (time.perf_counter() - t1))
     frame = "data:image/jpeg;base64," + base64.b64encode(engine.to_jpeg(img)).decode()
-    return {**res, "frame": frame, "timing_ms": {"fetch": round(1000 * (t1 - t0)), "analyze": round(1000 * (t2 - t1))}}
+    return {**res, "frame": frame, "timing_ms": {"fetch": fetch_ms, "analyze": analyze_ms}}
+
+
+@app.post("/api/live/white")
+def live_white(req: LiveIn):
+    """③ 흰 종이로 맞추기: 지금 한 장에서 (x, y) 둘레 41×41 영역을 재서 기준 또는 거절 이유 (안전장치는 engine.measure_white)"""
+    img, _ = fetch_frame(req.camera)
+    try:
+        return engine.measure_white(img, req.x, req.y)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
