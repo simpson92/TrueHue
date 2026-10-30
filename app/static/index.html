@@ -290,7 +290,7 @@ async function liveStart() {
     try {
       r = await fetch("/api/live", { method: "POST", headers: { "Content-Type": "application/json" },
                                      body: JSON.stringify({ camera: cam, x: state.live.x, y: state.live.y, white: state.live.white }) });
-      j = await r.json();
+      try { j = await r.json(); } catch (e) { j = { detail: `서버 안에서 오류가 났어요 (${r.status}) — uvicorn 터미널의 빨간 글씨를 확인해 주세요` }; r = null; }
     } catch (e) { r = null; j = { detail: "웹 서버에 연결할 수 없어요 (uvicorn이 켜져 있나요?)" }; }
     if (!state.live.on || state.mode !== "live") break;
     if (!r || !r.ok) { liveStatus(j.detail || "오류가 났어요", true); liveStop(true); break; }

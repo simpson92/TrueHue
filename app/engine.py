@@ -245,6 +245,11 @@ def analyze_upload(srgb8, illum, x, y, norm=False, white=None):
         x, y = x * w, y * h
     x1, y1, x2, y2 = roi_box(x, y, w, h)
     roi8 = srgb8[y1:y2, x1:x2].reshape(-1, 3)
+    if illum is None or not np.all(np.isfinite(illum)) or np.max(illum) <= 0:
+        # 사진 전체가 새까맣거나 전부 포화 → 조명을 추정할 수 없음 (NaN을 그대로 보내면 서버가 답을 못 만듦)
+        return {"mode": "upload", "roi": [x1, y1, x2, y2], "image_size": [w, h], "status": "uncertain", "reason": "no_illum",
+                "message": "화면 전체가 너무 어둡거나 밝아서 판단하기 어려워요",
+                "estimated_illuminant": {"rgb": None, "cct": None, "label": "조명 추정 불가", "angle": None}}
     out = {"mode": "upload", "roi": [x1, y1, x2, y2], "image_size": [w, h], "estimated_illuminant": cast_info(illum)}
     if np.mean(np.any(roi8 >= JPG_CLIP, axis=1)) >= HALF:
         return {**out, "status": "uncertain", "reason": "too_bright", "message": "너무 밝아서(하얗게 날아가서) 판단하기 어려워요"}
@@ -307,8 +312,10 @@ def smooth_illum(prev, new, alpha=LIVE_ALPHA, reset=LIVE_RESET):
     새 추정이 reset° 넘게 다르면(장면 · 조명이 바뀜) 섞지 않고 새 값으로 바로 바꾼다 (늦게 따라가지 않게)
     """
     new = np.asarray(new, float)
+    if not np.all(np.isfinite(new)) or new.max() <= 0:
+        return prev                                   # 이번 장은 추정 불가(새까맣거나 전부 포화) → 이전 값 유지 (없으면 None)
     new = new / np.linalg.norm(new)
-    if prev is None or not np.all(np.isfinite(new)):
+    if prev is None:
         return new
     prev = np.asarray(prev, float)
     if angle_deg(prev, new) > reset:
@@ -327,7 +334,7 @@ def analyze_live(srgb8, x, y, white=None, illum=None):
         illum = upload_illum(srgb8)
     res = analyze_upload(srgb8, illum, x, y, norm=True, white=white)
     res = {**res, "mode": "live", "white_warning": None}
-    if white is not None:
+    if white is not None and res["status"] == "ok":
         drift = angle_deg(illum, white["sog"])
         if drift > WHITE_DRIFT:
             res["white_warning"] = f"흰 종이를 맞춘 뒤 조명이나 장면이 바뀐 것 같아요 (자동 추정이 {drift:.0f}° 달라짐) — 다시 맞추면 더 정확해요"

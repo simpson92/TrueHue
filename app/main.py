@@ -173,7 +173,10 @@ def live(req: LiveIn):
     t1 = time.perf_counter()
     try:
         illum = engine.smooth_illum(LIVE_ILLUM.get(req.camera), engine.upload_illum(img))
-        LIVE_ILLUM[req.camera] = illum
+        if illum is None:
+            LIVE_ILLUM.pop(req.camera, None)
+        else:
+            LIVE_ILLUM[req.camera] = illum
         res = engine.analyze_live(img, req.x, req.y, white=white, illum=illum)
     except ValueError as e:
         raise HTTPException(400, str(e))
