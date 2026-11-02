@@ -33,6 +33,11 @@ HALF = 0.5                                  # 영역의 절반 이상이 포화�
 DARK_RAW = 20                               # ① 블랙 레벨 뺀 가장 어두운 채널 평균 < 20 → 너무 어두움 (D3과 같은 기준)
 JPG_CLIP, JPG_DARK = 250, 15                # ② 8비트 기준: 250 이상 = 포화, 가장 밝은 채널 평균 ≤ 15 = 너무 어두움
 DISPLAY_MAX = 1100                          # 화면에 보낼 그림의 긴 변(픽셀)
+# 한 가지 색 장면 (점검 C2, 웹 표시용 값 — 가짜 그림으로만 정함, 폰 시험 3으로 다시 볼 것)
+#   화면의 MONO_SHARE 이상이 한 색(방향 차이 MONO_TOL° 안)이면, 자동 추정(Shades of Gray)이 그 색을 조명으로 착각해도 알 수 없다
+#   가짜 그림: 컬러체커 장면의 흰 칸 57% · A4가 화면 60% 95% · 노란 면 100% 100%. 노란 면이 30~70%만 덮은 장면은 이 값으로 못 가림 (한계)
+MONO_TOL = 3.0
+MONO_SHARE = 0.9
 
 # 화면 표시용 변환: XYZ(D50) → sRGB(D65) — Bradford 순응
 _SRGB = colour.RGB_COLOURSPACES["sRGB"]
@@ -243,6 +248,23 @@ def correct_image(srgb8, illum, white=None):
     return (out * 255 + 0.5).astype(np.uint8)
 
 
+def same_color_share(srgb8, ref):
+    """화면에서 ref(선형 RGB)와 색 방향이 MONO_TOL° 안인 픽셀의 비율 (포화 · 아주 어두운 픽셀은 빼고 셈, 밝기는 무시)
+
+    비율만 알면 되므로 긴 변 약 160픽셀이 되게 건너뛰며 센다 (실시간 한 장에 약 47ms → 수 ms)
+    """
+    step = max(1, round(max(srgb8.shape[:2]) / 160))
+    srgb8 = srgb8[::step, ::step]
+    lin = colour.cctf_decoding(srgb8.astype(np.float32) / 255, function="sRGB")
+    valid = ~np.any(srgb8 >= JPG_CLIP, axis=2) & (lin.max(axis=2) > 0.02)
+    px = lin[valid]
+    if len(px) == 0:
+        return 1.0
+    ref = np.asarray(ref, np.float32)
+    cos = px @ ref / (np.linalg.norm(px, axis=1) * np.linalg.norm(ref) + 1e-12)
+    return float(np.mean(cos > np.cos(np.radians(MONO_TOL))))
+
+
 def cast_info(illum):
     """② 남은 색 기운 → 글자 (폰이 이미 화이트밸런스를 했으므로 K로 말하지 않음, D13)"""
     e = np.asarray(illum, float)
@@ -284,9 +306,21 @@ def analyze_upload(srgb8, illum, x, y, norm=False, white=None):
     explain = None
     if before["name"] != main["name"]:
         explain = f"사진에 남은 색 기운 때문에 보정 전에는 '{before['name']}'{josa_ro(before['name'])} 보였어요"
+    mono_warning = white_disagree = None
+    if white is None:
+        # C2: 누른 곳의 색이 화면 대부분을 채우면, 자동 추정이 그 색을 조명으로 보고 지웠을 수 있다
+        share = same_color_share(srgb8, lin)
+        if share >= MONO_SHARE:
+            mono_warning = (f"화면의 {share:.0%}가 누른 곳과 같은 색이에요 — 한 가지 색이 화면을 채우면 자동 보정이 "
+                            f"그 색을 조명으로 착각할 수 있어요. 다른 물건이 함께 보이게 조금 떨어져서 보세요")
+    elif main["name"] != after["name"]:
+        # C1: 흰 종이 기준과 자동 보정의 답이 다르면 알림 (크림 · 베이지 종이를 흰색으로 맞추면 여러 색에서 이렇게 됨)
+        white_disagree = (f"흰 종이 기준과 자동 보정이 다르게 봐요 (자동 보정은 '{after['name']}') — "
+                          f"맞춘 종이가 크림 · 베이지처럼 흰색이 아니면 흰 종이 기준이 틀렸을 수 있어요")
     return {**out, "status": "ok", "reason": None, "color_name": main["name"], "near_name": main["near"],
             "baseline_name": before["name"], "explain": explain, "lab": main["lab"], "swatch": main["hex"],
-            "white_used": white is not None, "methods": methods}
+            "white_used": white is not None, "mono_warning": mono_warning, "white_disagree": white_disagree,
+            "methods": methods}
 
 
 # ── ③ 실시간 카메라 모드 (IP Webcam, 체험용) ─────────────────────────
@@ -369,6 +403,7 @@ def measure_white(srgb8, x, y):
     (자동 추정이 틀린 장면 = 흰 종이 기준이 가장 필요한 장면이라 막지 않음, 10/30 의논)
     ④ 흰색 아닐 수 있음: 종이 색과 장면 자동 추정(Shades of Gray) 방향이 WHITE_ANGLE° 넘게 다름 → 크림색 · 베이지 · 색 있는 물체일 가능성
     ⑤ 회색 물체일 수 있음: 장면의 밝은 곳(포화 뺀 밝기 상위 2%)의 WHITE_REL 배보다 어두움 → 밝기 기준이 틀어짐
+    한 가지 색 (C2, ④보다 먼저): 화면의 MONO_SHARE 이상이 종이와 같은 색 → 자동 추정도 종이에 끌려가 ④로 확인할 수 없음 → 확인 필요
     """
     h, w = srgb8.shape[:2]
     x1, y1, x2, y2 = roi_box(x * w, y * h, w, h, r=WHITE_R)
@@ -390,6 +425,12 @@ def measure_white(srgb8, x, y):
     sog = upload_illum(srgb8)
     ang = angle_deg(ref, sog)
     cand = {"ref": [float(v) for v in ref], "sog": [float(v) for v in sog]}
+    share = same_color_share(srgb8, ref)
+    if share >= MONO_SHARE:
+        # C2: 화면 대부분이 종이와 같은 색이면 자동 추정도 종이에 끌려가 ④가 의미 없다 (노란 면 자체로 맞춰도 0°로 통과하던 문제)
+        return {**out, **cand, "ok": False, "confirm": True, "reason": "one_color",
+                "message": f"화면의 {share:.0%}가 종이와 같은 색이라 흰색인지 확인할 수 없어요 — 다른 물건이 함께 보이게 조금 떨어져서 "
+                           f"맞춰 주세요. 흰 종이가 맞으면 '그래도 쓰기'를 누르세요"}
     if ang > WHITE_ANGLE:
         return {**out, **cand, "ok": False, "confirm": True, "reason": "not_white",
                 "message": f"흰색이 아닐 수도 있어요 (자동 추정과 {ang:.0f}° 다름). 크림색 · 베이지는 기준으로 쓰면 색이 틀어져요 — "

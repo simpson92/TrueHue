@@ -7,7 +7,7 @@
 #
 # 점검(check)과 알려진 한계(known)를 나눈다
 #   - check: 지금 맞게 동작해야 하는 것. 고친 뒤 ❌가 나오면 무언가 깨진 것
-#   - known: 점검에서 찾았지만 아직 안 고친 한계(C1 · C2 · C3). 지금은 "한계 그대로"가 정상이고,
+#   - known: 점검에서 찾았지만 아직 안 고친 한계(C1 일부 · C2 일부 · C3). 지금은 "한계 그대로"가 정상이고,
 #            고쳐서 한계가 사라지면 🔔로 알려 준다 → 그때 이 줄을 check로 바꾼다
 # 숫자는 시험용 가짜 그림의 숫자이고 평가 결과가 아니다 (평가 숫자는 reports/final/)
 import csv
@@ -95,22 +95,27 @@ for name, gain in F.LIGHTS:
     fr = frame(gain)
     il = E.upload_illum(fr)
     w = white_at(fr, 19)                                 # 컬러체커 흰 칸(19번)으로 흰 종이 기준 맞추기
-    before = sog = white = 0
+    before = sog = white = mono = disagree = 0
     wrong = []
     for k in range(1, 25):
         r = live(fr, k, illum=il)
         before += r["baseline_name"] in ANSWER[k]
         sog += r["color_name"] in ANSWER[k]
+        mono += r["mono_warning"] is not None
         if r["color_name"] not in ANSWER[k]:
             wrong.append(f"{k}번 → {r['color_name']}")
         if w["ok"]:
-            white += live(fr, k, white=w, illum=il)["color_name"] in ANSWER[k]
+            rw = live(fr, k, white=w, illum=il)
+            white += rw["color_name"] in ANSWER[k]
+            disagree += rw["white_disagree"] is not None
     count[name] = (before, sog, white)
     print(f"  · {name}: 보정 전 {before}/24 · Shades of Gray {sog}/24 · 흰 칸 기준 {white}/24"
           + (f"  (SoG 틀린 칸: {', '.join(wrong)})" if wrong else ""))
     check(f"{name}: 흰 칸으로 맞추기가 안전장치를 통과", w["ok"], f"자동 추정과 {w.get('checks', {}).get('angle')}° 차이")
     check(f"{name}: Shades of Gray 23/24 이상", sog >= 23)
     check(f"{name}: 흰 칸 기준 24/24", white == 24)
+    check(f"{name}: 여러 색이 보이는 장면이라 한 가지 색 경고 없음 (C2)", mono == 0, f"{mono}칸")
+    check(f"{name}: 진짜 흰 칸 기준은 자동 보정과 거의 같음 — '다르게 봐요' 1칸 이하 (C1)", disagree <= 1, f"{disagree}칸")
 b, s, _ = count["따뜻한 조명"]
 check("따뜻한 조명에서 보정 효과가 보임 (보정 전 < Shades of Gray)", b < s, f"{b} → {s}")
 print("  · 19번 흰색이 SoG로 '회색'인 건 폰 밝기를 그대로 쓰는 한계(웹-2 ②) — 흰 종이 기준이 푸는 문제")
@@ -176,32 +181,55 @@ far = np.array([1.0, 0.8, 0.5]); far /= np.linalg.norm(far)      # v에서 10° 
 check("부드럽게: 10° 넘게 다르면 바로 바꿈", np.allclose(E.smooth_illum(v, far), far),
       f"{E.angle_deg(v, far):.1f}° 차이")
 
-# ── 5. 알려진 한계 (10/30 점검 C1 · C2 · C3, 아직 안 고침) ─────────────
-print("5. 알려진 한계 — 지금은 '한계 그대로'가 정상. 고친 뒤 🔔가 나오면 check로 바꾼다")
+# ── 5. 흰 종이 기준 확인 · 한 가지 색 장면 (점검 C1 · C2, 11/2 초안) ──────
+print("5. 흰 종이 기준 확인 · 한 가지 색 장면 — '다르게 봐요'(C1) · 화면 90% 이상이 한 색이면 경고 · 확인 필요(C2)")
 day = LIGHT["주광"]
+dec = lambda rgb8: colour.cctf_decoding(np.array(rgb8) / 255, function="sRGB")
+yellow = np.empty_like(F.SCENE)
+yellow[:] = dec((235, 200, 60))                                   # 노란 포스트잇이 화면 가득
+fry = frame(day, yellow)
+r = live(fry, (0.5, 0.5))
+check("노란 면이 화면 가득 → 결과 카드에 한 가지 색 경고", r["mono_warning"] is not None, f"SoG 이름 '{r['color_name']}'")
+wy = white_at(fry, (0.5, 0.5))
+check("노란 면 자체로 흰 종이 맞추기 → 확인 필요 (흰색인지 확인할 수 없음)",
+      not wy["ok"] and wy.get("confirm") and wy["reason"] == "one_color" and "ref" in wy, wy["message"][:30])
+close = F.SCENE.copy()
+close[54:426, 72:568] = dec((243, 243, 243))                      # 진짜 A4를 가까이 대서 화면의 60%를 채움 (372×496)
+wa = white_at(frame(day, close), (0.5, 0.5))
+check("진짜 A4라도 화면 대부분을 채우면 → 확인 필요 (떨어져서 맞추라고 안내, '그래도 쓰기' 가능)",
+      not wa["ok"] and wa.get("confirm") and wa["reason"] == "one_color", wa["message"][:30])
 fr_w = frame(day, paper_scene((243, 243, 243)))
 w_ref = white_at(fr_w, PAPER_XY)
+creams = []
 for label, rgb8 in [("크림 종이", (245, 232, 200)), ("베이지 종이", (230, 215, 185))]:
     frc = frame(day, paper_scene(rgb8))
     wc = white_at(frc, PAPER_XY)
-    g21 = live(frc, 21, white=wc, illum=E.upload_illum(frc))["color_name"] if wc["ok"] or wc.get("ref") else "-"
-    known("C1", f"{label}가 ④ 흰색 확인을 통과", wc["ok"],
+    ilc = E.upload_illum(frc)
+    rs = [live(frc, k, white=wc, illum=ilc) for k in range(1, 25)]
+    n_dis = sum(x["white_disagree"] is not None for x in rs)
+    check(f"{label}를 기준으로 쓰면 '두 방법이 다르게 봐요'가 여러 칸에서 뜸 (C1)", n_dis >= 3,
+          f"{n_dis}/24칸 · 21번 회색 칸 '{rs[20]['color_name']}'{' + 경고' if rs[20]['white_disagree'] else ''}")
+    creams.append((label, wc, rs[20]["color_name"]))
+
+# ── 6. 알려진 한계 (아직 안 고친 것) ───────────────────────────────────
+print("6. 알려진 한계 — 지금은 '한계 그대로'가 정상. 고친 뒤 🔔가 나오면 check로 바꾼다")
+for label, wc, g21 in creams:
+    known("C1", f"{label}가 ④ 흰색 확인을 통과 (위의 '다르게 봐요'로만 알 수 있음)", wc["ok"],
           f"자동 추정과 {E.angle_deg(wc['ref'], wc['sog']):.1f}° (흰 종이 {w_ref['checks']['angle']}°) → 기준으로 쓰면 21번 회색 칸이 '{g21}'")
-yellow = np.empty_like(F.SCENE)
-yellow[:] = colour.cctf_decoding(np.array([235, 200, 60]) / 255, function="sRGB")   # 노란 포스트잇이 화면 가득
-fry = frame(day, yellow)
-r = live(fry, (0.5, 0.5))
-wy = white_at(fry, (0.5, 0.5))
-known("C2", "노란 면이 화면을 채우면 SoG와 흰 종이 확인이 함께 속음",
-      r["color_name"] != "노랑" and wy["ok"], f"SoG 이름 '{r['color_name']}' · 흰 종이로 맞추기 {'통과' if wy['ok'] else '걸림'}")
+half = F.SCENE.copy()
+half[F.H // 2:, :] = yellow[F.H // 2:, :]                         # 노란 면이 화면 아래 절반
+frh = frame(day, half)
+r = live(frh, (0.5, 0.9))
+known("C2", "노란 면이 화면 절반이면 SoG가 노란 면을 다른 이름으로 부르는데 한 가지 색 경고 없음 (90% 기준 아래)",
+      r["color_name"] != "노랑" and r["mono_warning"] is None, f"노란 면 이름 '{r['color_name']}'")
 fr_bright = frame(day, F.SCENE * 1.8)                             # 물건을 볼 때 폰이 자동 노출로 밝게 올린 장
 r = live(fr_bright, 24, white=white_at(frame(day), 19), illum=E.upload_illum(fr_bright))
 known("C3", "흰 종이를 맞춘 뒤 자동 노출로 밝아지면 검정이 검정이 아님 · 경고 없음",
       r["color_name"] != "검정" and r["white_warning"] is None,
       f"24번 검정 칸이 '{r['color_name']}'(밝기 {r['lab']['L']}) · ⑥ 경고 {'없음' if r['white_warning'] is None else '있음'}")
 
-# ── 6. 서버가 답을 보낼 수 있는지 ──────────────────────────────────
-print("6. JSON — 위에서 나온 결과를 모두 서버 응답(JSON)으로 보낼 수 있어야 함 (NaN · 무한대 없음)")
+# ── 7. 서버가 답을 보낼 수 있는지 ──────────────────────────────────
+print("7. JSON — 위에서 나온 결과를 모두 서버 응답(JSON)으로 보낼 수 있어야 함 (NaN · 무한대 없음)")
 bad = []
 for i, res in enumerate(results):
     try:

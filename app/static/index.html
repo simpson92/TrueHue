@@ -129,7 +129,7 @@
         <button id="white-set" disabled>흰 종이로 맞추기</button>
         <button id="white-force" hidden>그래도 쓰기</button>
         <button id="white-clear" disabled>기준 지우기</button>
-        <span class="w-msg" id="white-msg" role="status">흰 종이를 네모 안에 꽉 차게 비추고 누르면, 그 종이로 조명 색과 밝기를 맞춰요</span>
+        <span class="w-msg" id="white-msg" role="status">A4 복사 용지처럼 새하얀 종이를 네모 안에 꽉 차게 비추고 누르면, 그 종이로 조명 색과 밝기를 맞춰요 (크림 · 베이지 종이는 안 돼요)</span>
       </div>
       <p class="hint-line">흰 종이 기준은 <b>평가하지 않은 기능</b>이에요. 평가 숫자(85.1%)는 자동 보정(Shades of Gray) 기준이에요. 종이와 물건이 같은 빛을 받아야 해요.</p>
       <p class="note">폰에서 IP Webcam을 열고 맨 아래 <b>서버 시작</b>을 누른 뒤, 폰 화면 아래에 나오는 주소를 넣으세요. PC와 폰이 같은 와이파이여야 해요.
@@ -272,6 +272,8 @@ function render(j) {
     html += `<div class="row"><span class="k">고정 보정이 가정한 조명</span><b>약 ${j.baseline_illuminant.cct.toLocaleString()}K</b></div>`;
   if (j.explain) html += `<p class="explain">${esc(j.explain)}</p>`;
   if (j.white_warning) html += `<p class="warnline">${esc(j.white_warning)}</p>`;
+  if (j.white_disagree) html += `<p class="warnline">${esc(j.white_disagree)}</p>`;   // C1: 흰 종이 기준 ≠ 자동 보정
+  if (j.mono_warning) html += `<p class="warnline">${esc(j.mono_warning)}</p>`;       // C2: 한 가지 색이 화면을 채움
   if (j.methods && j.methods.length) {
     html += `<table><caption class="label" style="text-align:left;padding-bottom:4px">${j.mode === "dataset" ? "방법별 이름 (평가와 같은 처리)" : "비교"}</caption>
       <thead><tr><th>방법</th><th>이름</th><th>가까운 이름</th></tr></thead><tbody>` +
@@ -356,7 +358,7 @@ async function whiteSet() {
     if (!r.ok) whiteMsg(j.detail || "오류가 났어요", "err");
     else if (!j.ok) {
       drawRoi(j); whiteMsg(j.message, "err");
-      if (j.confirm) { whiteCand = j; $("white-force").hidden = false; }   // ④ · ⑤: 사용자가 확인하고 쓸 수 있음
+      if (j.confirm) { whiteCand = j; $("white-force").hidden = false; }   // ④ · ⑤ · 한 가지 색(C2): 사용자가 확인하고 쓸 수 있음
     }
     else { drawRoi(j); whiteUse(j); }
   } catch (e) { whiteMsg("웹 서버에 연결할 수 없어요", "err"); }
