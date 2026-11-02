@@ -18,6 +18,7 @@ from PIL import Image
 LIGHTS = [("주광", [1.00, 1.00, 1.00]), ("따뜻한 조명", [1.00, 0.72, 0.42]), ("푸른 조명", [0.70, 0.86, 1.00])]
 PERIOD = 4.0                                    # 초마다 조명 바꿈
 W, H = 640, 480
+CW, CH, GAP, X0, Y0 = 80, 80, 12, 44, 52        # 칸 너비 · 높이 · 칸 사이 · 첫 칸 왼쪽 위 (픽셀)
 
 
 def chart_linear_srgb():
@@ -32,12 +33,17 @@ def make_scene():
     """선형 sRGB 장면 (H, W, 3): 18% 회색 배경 + 4×6 칸"""
     img = np.full((H, W, 3), 0.18)
     rgb = chart_linear_srgb()
-    cw, ch, gap, x0, y0 = 80, 80, 12, 44, 52
     for k in range(24):
         r, c = divmod(k, 6)
-        x, y = x0 + c * (cw + gap), y0 + r * (ch + gap)
-        img[y:y + ch, x:x + cw] = rgb[k]
+        x, y = X0 + c * (CW + GAP), Y0 + r * (CH + GAP)
+        img[y:y + CH, x:x + CW] = rgb[k]
     return img
+
+
+def patch_center(k):
+    """k번 칸(1~24)의 가운데 → 그림 너비 · 높이에 대한 비율 (x, y). 점검(check_web.py)이 칸을 누를 때 씀"""
+    r, c = divmod(k - 1, 6)
+    return (X0 + c * (CW + GAP) + CW / 2) / W, (Y0 + r * (CH + GAP) + CH / 2) / H
 
 
 SCENE = make_scene()
@@ -45,16 +51,23 @@ RNG = np.random.default_rng(42)
 FIXED = None                                    # --light로 고르면 그 조명만 (LIGHTS의 번호)
 
 
-def frame_jpeg():
-    k = FIXED if FIXED is not None else int(time.time() // PERIOD) % len(LIGHTS)
-    name, gain = LIGHTS[k]
-    g = np.array(gain)
-    lin = SCENE * g * (0.75 / (g @ [0.2126, 0.7152, 0.0722]))   # 폰 자동 노출처럼 밝기는 맞추고, 색은 그대로
-    lin = lin + RNG.normal(0, 0.004, lin.shape)              # 센서 잡음 조금
+def render_jpeg(gain, scene=None, rng=None):
+    """장면 × 조명 색 → JPEG 한 장 (점검에서는 조명 · 장면 · 잡음을 골라서 부른다)"""
+    scene = SCENE if scene is None else scene
+    rng = RNG if rng is None else rng
+    g = np.array(gain, float)
+    lin = scene * g * (0.75 / (g @ [0.2126, 0.7152, 0.0722]))   # 폰 자동 노출처럼 밝기는 맞추고, 색은 그대로
+    lin = lin + rng.normal(0, 0.004, lin.shape)              # 센서 잡음 조금
     srgb = colour.cctf_encoding(np.clip(lin, 0, 1), function="sRGB")
     buf = io.BytesIO()
     Image.fromarray((srgb * 255 + 0.5).astype(np.uint8)).save(buf, format="JPEG", quality=85)
-    return buf.getvalue(), name
+    return buf.getvalue()
+
+
+def frame_jpeg():
+    k = FIXED if FIXED is not None else int(time.time() // PERIOD) % len(LIGHTS)
+    name, gain = LIGHTS[k]
+    return render_jpeg(gain), name
 
 
 class Handler(BaseHTTPRequestHandler):
