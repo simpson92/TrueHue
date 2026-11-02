@@ -55,8 +55,9 @@
 - [x] 웹 화면 설정 (D13) · "가까운 이름" 기준 — 채도 여유 < 7 · 색상 < 3° · 밝기 < 3 (보정용, 22)
 - [x] 웹 화면 (FastAPI, `app/`) — 데이터셋 모드(실험 재현) · 내 사진 모드(체험), 평가 계산과 같은 이름 600 / 600 (`python app/engine.py`)
 - [x] 웹 ③ 실시간 카메라(IP Webcam) · 흰 종이 기준(평가하지 않은 선택 기능) · 보정 전/후 보기 · 가짜 카메라 시험 도구 (D13 11/2 보완)
-- [x] 웹 ② · ③ 자기 점검 (`python app/check_web.py`, `data/` 없이) · 흰 종이 기준 확인 초안 (C1 · C2)
-- [ ] 실제 폰 시험 (노출 · 실제 종이 · 한 가지 색 · 안전장치 기준값 · 깜빡임) · 리포트 · 발표
+- [x] 웹 ② · ③ 자기 점검 (`python app/check_web.py`, `data/` 없이) · 흰 종이 기준 확인 (C1 · C2) · 어두운 색 표시 · 노출 고정 안내 (C3)
+- [x] 실제 폰 시험 (2026-11-02, 노출 · 실제 종이 · 한 가지 색 · 안전장치 기준값 · 깜빡임 → `reports/data_notes.md`). ⑥ 조명 바뀜 경고만 확인 전
+- [ ] 표시 개선 (수식어) · README 개편 · 리포트 · 발표
 - [ ] (확장) 섞인 조명 · 야간 한계 분석
 
 ## 폴더 구조
@@ -69,7 +70,7 @@ TrueHue/
 ├── splits/        # 보정용 / 봉인 평가용 사진 목록
 ├── src/           # 전처리·보정·채점 스크립트 (번호 순서대로 실행)
 ├── reports/       # 데이터 노트, 결정 기록, 정답표, 비교 리포트
-├── app/           # 웹 화면 (FastAPI: engine.py 계산 · main.py 서버 · static/index.html 화면, D13)
+├── app/           # 웹 화면 (FastAPI: engine.py 계산 · main.py 서버 · static/index.html 화면 · check_web.py 자기 점검 · fake_ipwebcam.py 가짜 카메라, D13)
 └── outputs/       # 실행 결과물 (gitignore, 스크립트로 다시 생성)
 ```
 
@@ -195,7 +196,7 @@ python app/fake_ipwebcam.py              # (폰 없이 ③ 시험) 가짜 IP Web
 - API: `POST /api/analyze` (`sample` 또는 `upload_id`, `x`, `y`) → `status` · `color_name` · `near_name` · `baseline_name` · `estimated_illuminant` · `explain` · `methods` /
   `POST /api/live` (`camera`, `x`, `y`, `white`?, `view` = before · after) → 위와 같은 결과 + 그 장의 그림 / `POST /api/live/white` (`camera`, `x`, `y`) → 흰 종이 기준 또는 거절 · 확인 이유
 
-**아직 아닌 것** — 실제 색각이상 사용자 시험은 하지 않았다 · 폰 카메라의 자동 가공(노출 · 밝기 곡선 · 채도 강조)은 화이트 밸런스 말고는 막지 못한다 · 한 장면에 조명이 섞이면 보정이 틀릴 수 있다 · 85%는 일곱 번에 한 번 틀린다는 뜻이라 안전이 걸린 판단(전선 색 등)에는 쓰지 않는다
+**아직 아닌 것** — 실제 색각이상 사용자 시험은 하지 않았다 · 폰 카메라의 자동 가공(노출 · 밝기 곡선 · 채도 강조)은 화이트 밸런스 말고는 막지 못한다 · 한 장면에 조명이 섞이면 보정이 틀릴 수 있다 · 85.1%는 약 일곱 번에 한 번(14.9%) 틀린다는 뜻이라 안전이 걸린 판단(전선 색 등)에는 쓰지 않는다
 
 ## 지금까지의 주요 발견
 
