@@ -157,7 +157,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const state = { mode: "dataset", sample: null, uploadId: null, view: "baseline", samples: [], upView: "before",
-                live: { on: false, x: 0.5, y: 0.5, frames: 0, white: null, view: "before" } };
+                live: { on: false, x: 0.5, y: 0.5, frames: 0, white: null, view: "before", size: null } };
 const uploadSrc = () => `/api/upload/${state.uploadId}/image?view=${state.upView}`;
 
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -309,6 +309,7 @@ async function liveStart() {
     showPhoto(j.frame);
     drawRoi(j);
     render(j);
+    state.live.size = j.image_size;                        // 멈춘 뒤 누를 때 네모를 바로 그리려고 프레임 크기를 기억
     state.live.frames += 1;
     const fps = 1000 / (performance.now() - t0);
     liveStatus(`연결됨 · ${state.live.frames}장째 · 약 ${fps.toFixed(1)}장/초 (폰에서 받기 ${j.timing_ms.fetch}ms · 계산 ${j.timing_ms.analyze}ms)`);
@@ -324,6 +325,15 @@ function liveStop(keepMsg) {
   $("result").setAttribute("aria-live", "polite");
   whiteCand = null; $("white-force").hidden = true;
   if (!keepMsg) liveStatus(`멈춤 · 마지막 장의 결과를 보여 주고 있어요`);
+}
+
+// 멈춘 동안 누른 곳: 계산은 시작한 뒤에 하지만, 네모는 바로 옮겨서 "어디를 볼지" 보여 준다 (점검 C14)
+function liveMark(fx, fy) {
+  liveStatus("멈춤 · 볼 곳을 옮겼어요 — 시작하면 이 네모 자리를 봐요 (오른쪽은 멈추기 전 결과)");
+  if (!state.live.size) return;                          // 아직 받은 장이 없으면 그릴 그림도 없음
+  const [w, h] = state.live.size, r = 5;                 // r = engine.ROI_R (11×11 영역)
+  const x = Math.round(fx * w), y = Math.round(fy * h);
+  drawRoi({ roi: [Math.max(0, x - r), Math.max(0, y - r), Math.min(w, x + r + 1), Math.min(h, y + r + 1)], image_size: [w, h] });
 }
 
 // 흰 종이 기준: 지금 보고 있는 곳(네모)의 종이를 재서 기준을 받는다. 거절되면 이유를 보여 주고 기준은 그대로
@@ -391,7 +401,11 @@ $("file").onchange = (e) => upload(e.target.files[0]);
 $("photo").onclick = (e) => {
   const r = e.target.getBoundingClientRect();
   const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
-  if (state.mode === "live") { state.live.x = fx; state.live.y = fy; return; }   // 다음 장부터 이곳을 본다
+  if (state.mode === "live") {                           // 다음 장부터 이곳을 본다
+    state.live.x = fx; state.live.y = fy;
+    if (!state.live.on) liveMark(fx, fy);                  // 멈춘 상태면 네모만 바로 옮겨 그림 (돌고 있으면 다음 장이 그림)
+    return;
+  }
   analyze(fx, fy);
 };
 loadSamples();
