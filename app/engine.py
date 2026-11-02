@@ -43,6 +43,15 @@ MONO_SHARE = 0.9
 #   실제 폰 검정 키: 노출 고정 "분홍"(밝기 10.9 · 채도 12.2) · 자동 노출 "파랑"(23.7 · 18.5) → 걸림.
 #   컬러체커에서 밝기 30 아래 유채색은 보라 10번(채도 29) · 파랑 13번(48~51)뿐이고 맞게 불림 → 안 걸림
 DARK_C = 25.0
+# 수식어 · 갈색 계열 알림 (2단계 표시 개선, 웹 표시용 — 이름 규칙은 그대로, 앞에 한 단어만 붙임)
+#   기준은 컬러체커 표준 색 24개의 밝기 · 채도 빈 곳에 놓음 (영어 이름과 맞는지로 확인: red 60.4 "진한" / moderate red 50.9 없음)
+#   유채색: 밝기 < 35 어두운 (blue 28.8 · purple 30.3 | foliage 43.1) · 밝기 > 75 밝은 (yellow 81.7 | yellow green 72.5, 채도 < 30이면 연한)
+#           채도 ≥ 56 진한 (red 60.4 · orange 67.5 … | blue 52.3) · 밝기 ≥ 60이고 채도 < 30 연한 (light skin 65.7 · 25.4)
+#   회색: 밝기 < 45 어두운 회색 (neutral 3.5 35.7 | neutral 5 50.9) · > 75 밝은 회색 (neutral 8 81.3). 검정 · 흰색 · 갈색은 붙이지 않음
+#   갈색 계열: 빨강인데 밝기 < 45 · 채도 < 35 → "갈색 계열일 수 있어요" (red 15번 42.1 · 60.4는 채도로, moderate red 51.1은 밝기로 빠짐)
+MOD_DARK, MOD_LIGHT, MOD_VIVID, MOD_PALE_C, MOD_PALE_L = 35.0, 75.0, 56.0, 30.0, 60.0
+GRAY_DARK, GRAY_LIGHT = 45.0, 75.0
+BROWNISH_L, BROWNISH_C = 45.0, 35.0
 
 # 화면 표시용 변환: XYZ(D50) → sRGB(D65) — Bradford 순응
 _SRGB = colour.RGB_COLOURSPACES["sRGB"]
@@ -72,10 +81,30 @@ def gains(illum):
     return illum / illum[1]
 
 
+def modifier(name, L, C):
+    """기본 이름 + 밝기 · 채도 → 앞에 붙일 수식어 (진한 · 연한 · 어두운 · 밝은) 또는 None — 표시용, 이름은 안 바꿈"""
+    if name in ("검정", "흰색", "갈색"):
+        return None
+    if name == "회색":
+        return "어두운" if L < GRAY_DARK else ("밝은" if L > GRAY_LIGHT else None)
+    if L < MOD_DARK:
+        return "어두운"
+    if L > MOD_LIGHT:
+        return "연한" if C < MOD_PALE_C else "밝은"
+    if C >= MOD_VIVID:
+        return "진한"
+    if L >= MOD_PALE_L and C < MOD_PALE_C:
+        return "연한"
+    return None
+
+
 def describe(lab):
-    """Lab → 이름 · 가까운 이름 · L/C/h"""
+    """Lab → 이름 · 수식어 붙인 이름 · 가까운 이름 · 갈색 계열 여부 · L/C/h"""
     L, C, h = lab_to_lch(lab)
-    return {"name": name_color(lab), "near": near_name(lab, HINT),
+    name = name_color(lab)
+    mod = modifier(name, L, C)
+    return {"name": name, "full": f"{mod} {name}" if mod else name, "near": near_name(lab, HINT),
+            "brownish": bool(name == "빨강" and L < BROWNISH_L and C < BROWNISH_C),   # bool(): numpy 값이면 JSON이 못 받음
             "lab": {"L": round(L, 1), "C": round(C, 1), "h": round(h, 1)}, "hex": lab_to_hex(lab)}
 
 
@@ -203,6 +232,7 @@ def analyze_sample(name, x, y, norm=False):
         explain = (f"이 사진의 조명(약 {info['cct']:,}K)이 고정 보정이 가정한 조명(약 {binfo['cct']:,}K)보다 {side} 쪽이라, "
                    f"보정 전에는 '{base['name']}'{josa_ro(base['name'])} 보였어요")
     return {**out, "status": "ok", "reason": None, "color_name": main["name"], "near_name": main["near"],
+            "display_name": main["full"], "brownish": main["brownish"],
             "baseline_name": base["name"], "baseline_illuminant": binfo, "explain": explain,
             "lab": main["lab"], "swatch": main["hex"], "methods": rows}
 
@@ -328,6 +358,7 @@ def analyze_upload(srgb8, illum, x, y, norm=False, white=None):
         dark_warning = (f"아주 어두운 색이라 이름이 틀릴 수 있어요 — 검정일 수도 있어요 "
                         f"(어두운 곳은 폰 사진에서 색이 잘 틀어져요)")
     return {**out, "status": "ok", "reason": None, "color_name": main["name"], "near_name": main["near"],
+            "display_name": main["full"], "brownish": main["brownish"],
             "baseline_name": before["name"], "explain": explain, "lab": main["lab"], "swatch": main["hex"],
             "white_used": white is not None, "mono_warning": mono_warning, "white_disagree": white_disagree,
             "dark_warning": dark_warning, "methods": methods}
