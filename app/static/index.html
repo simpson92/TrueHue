@@ -133,7 +133,8 @@
       </div>
       <p class="hint-line">흰 종이 기준은 <b>평가하지 않은 기능</b>이에요. 평가 숫자(85.1%)는 자동 보정(Shades of Gray) 기준이에요. 종이와 물건이 같은 빛을 받아야 해요.</p>
       <p class="note">폰에서 IP Webcam을 열고 맨 아래 <b>서버 시작</b>을 누른 뒤, 폰 화면 아래에 나오는 주소를 넣으세요. PC와 폰이 같은 와이파이여야 해요.
-        보정 효과를 보려면 IP Webcam(폰)의 <b>⋮ → 영상 관련 → 화이트 밸런스</b>를 '자동'이 아닌 값(예: 주광)으로 고정하세요 — 자동이면 폰이 이미 보정해서 보정 전 · 후가 거의 같아요.
+        보정 효과를 보려면 IP Webcam(폰)의 <b>⋮ → 영상 관련 → 화이트 밸런스</b>를 '자동'이 아닌 값(예: 형광등 아래면 전구색)으로 고정하세요 — 자동이면 폰이 이미 보정해서 보정 전 · 후가 거의 같아요.
+        흰 종이 기준을 쓸 때는 <b>노출도 고정</b>하세요: PC 브라우저로 폰 주소를 열고 <b>수동 센서 제어 → 센서 제어</b>를 수동으로 바꾼 뒤 ISO · 노출을 맞춰요 — 자동이면 종이를 볼 때와 물건을 볼 때 밝기가 달라져 검정 · 회색이 틀어져요.
         화면을 누르면 그곳을 계속 봐요(처음엔 가운데). 체험용이라 평가 숫자와는 관계없어요.</p>
     </div>
 
@@ -274,6 +275,7 @@ function render(j) {
   if (j.white_warning) html += `<p class="warnline">${esc(j.white_warning)}</p>`;
   if (j.white_disagree) html += `<p class="warnline">${esc(j.white_disagree)}</p>`;   // C1: 흰 종이 기준 ≠ 자동 보정
   if (j.mono_warning) html += `<p class="warnline">${esc(j.mono_warning)}</p>`;       // C2: 한 가지 색이 화면을 채움
+  if (j.dark_warning) html += `<p class="warnline">${esc(j.dark_warning)}</p>`;       // C3: 검정 범위인데 유채색 이름
   if (j.methods && j.methods.length) {
     html += `<table><caption class="label" style="text-align:left;padding-bottom:4px">${j.mode === "dataset" ? "방법별 이름 (평가와 같은 처리)" : "비교"}</caption>
       <thead><tr><th>방법</th><th>이름</th><th>가까운 이름</th></tr></thead><tbody>` +

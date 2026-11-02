@@ -95,19 +95,21 @@ for name, gain in F.LIGHTS:
     fr = frame(gain)
     il = E.upload_illum(fr)
     w = white_at(fr, 19)                                 # 컬러체커 흰 칸(19번)으로 흰 종이 기준 맞추기
-    before = sog = white = mono = disagree = 0
+    before = sog = white = mono = disagree = dark = 0
     wrong = []
     for k in range(1, 25):
         r = live(fr, k, illum=il)
         before += r["baseline_name"] in ANSWER[k]
         sog += r["color_name"] in ANSWER[k]
         mono += r["mono_warning"] is not None
+        dark += r["dark_warning"] is not None
         if r["color_name"] not in ANSWER[k]:
             wrong.append(f"{k}번 → {r['color_name']}")
         if w["ok"]:
             rw = live(fr, k, white=w, illum=il)
             white += rw["color_name"] in ANSWER[k]
             disagree += rw["white_disagree"] is not None
+            dark += rw["dark_warning"] is not None
     count[name] = (before, sog, white)
     print(f"  · {name}: 보정 전 {before}/24 · Shades of Gray {sog}/24 · 흰 칸 기준 {white}/24"
           + (f"  (SoG 틀린 칸: {', '.join(wrong)})" if wrong else ""))
@@ -116,6 +118,7 @@ for name, gain in F.LIGHTS:
     check(f"{name}: 흰 칸 기준 24/24", white == 24)
     check(f"{name}: 여러 색이 보이는 장면이라 한 가지 색 경고 없음 (C2)", mono == 0, f"{mono}칸")
     check(f"{name}: 진짜 흰 칸 기준은 자동 보정과 거의 같음 — '다르게 봐요' 1칸 이하 (C1)", disagree <= 1, f"{disagree}칸")
+    check(f"{name}: 진한 파랑 · 보라 · 검정은 맞게 불려 어두운 색 경고 없음 (C3)", dark == 0, f"{dark}칸")
 b, s, _ = count["따뜻한 조명"]
 check("따뜻한 조명에서 보정 효과가 보임 (보정 전 < Shades of Gray)", b < s, f"{b} → {s}")
 print("  · 19번 흰색이 SoG로 '회색'인 건 폰 밝기를 그대로 쓰는 한계(웹-2 ②) — 흰 종이 기준이 푸는 문제")
@@ -182,7 +185,7 @@ check("부드럽게: 10° 넘게 다르면 바로 바꿈", np.allclose(E.smooth_
       f"{E.angle_deg(v, far):.1f}° 차이")
 
 # ── 5. 흰 종이 기준 확인 · 한 가지 색 장면 (점검 C1 · C2, 11/2 초안) ──────
-print("5. 흰 종이 기준 확인 · 한 가지 색 장면 — '다르게 봐요'(C1) · 화면 90% 이상이 한 색이면 경고 · 확인 필요(C2)")
+print("5. 흰 종이 기준 확인 · 한 가지 색 · 어두운 색 — '다르게 봐요'(C1) · 화면 90% 이상이 한 색(C2) · 검정일 수도 있어요(C3)")
 day = LIGHT["주광"]
 dec = lambda rgb8: colour.cctf_decoding(np.array(rgb8) / 255, function="sRGB")
 yellow = np.empty_like(F.SCENE)
@@ -210,6 +213,12 @@ for label, rgb8 in [("크림 종이", (245, 232, 200)), ("베이지 종이", (23
     check(f"{label}를 기준으로 쓰면 '두 방법이 다르게 봐요'가 여러 칸에서 뜸 (C1)", n_dis >= 3,
           f"{n_dis}/24칸 · 21번 회색 칸 '{rs[20]['color_name']}'{' + 경고' if rs[20]['white_disagree'] else ''}")
     creams.append((label, wc, rs[20]["color_name"]))
+key = paper_scene((26, 30, 46))                                    # 푸른 기가 조금 남은 검정 키보드 (11/2 실제 폰처럼)
+frk = frame(day, key)
+rk = live(frk, PAPER_XY, white=white_at(frk, 19), illum=E.upload_illum(frk))
+check("어둡고 색이 조금 남은 검정 → 유채색 이름이면 '검정일 수도 있어요' (C3)",
+      rk["color_name"] != "검정" and rk["dark_warning"] is not None,
+      f"'{rk['color_name']}' · 밝기 {rk['lab']['L']} · 채도 {rk['lab']['C']}")
 
 # ── 6. 알려진 한계 (아직 안 고친 것) ───────────────────────────────────
 print("6. 알려진 한계 — 지금은 '한계 그대로'가 정상. 고친 뒤 🔔가 나오면 check로 바꾼다")
@@ -224,7 +233,7 @@ known("C2", "노란 면이 화면 절반이면 SoG가 노란 면을 다른 이�
       r["color_name"] != "노랑" and r["mono_warning"] is None, f"노란 면 이름 '{r['color_name']}'")
 fr_bright = frame(day, F.SCENE * 1.8)                             # 물건을 볼 때 폰이 자동 노출로 밝게 올린 장
 r = live(fr_bright, 24, white=white_at(frame(day), 19), illum=E.upload_illum(fr_bright))
-known("C3", "흰 종이를 맞춘 뒤 자동 노출로 밝아지면 검정이 검정이 아님 · 경고 없음",
+known("C3", "흰 종이를 맞춘 뒤 자동 노출로 밝아지면 검정이 검정이 아님 · 경고 없음 (대응은 화면 안내: 노출 고정)",
       r["color_name"] != "검정" and r["white_warning"] is None,
       f"24번 검정 칸이 '{r['color_name']}'(밝기 {r['lab']['L']}) · ⑥ 경고 {'없음' if r['white_warning'] is None else '있음'}")
 

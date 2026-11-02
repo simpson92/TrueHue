@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from common import NEUTRALS, GEHLER_BLACK, GEHLER_SAT_RAW, gehler_camera, load_gehler_index, load_gehler_image  # noqa: E402
 from pipeline import XYZ_STD, D50, load_color_matrices  # noqa: E402
-from namer import name_color, lab_to_lch  # noqa: E402
+from namer import name_color, lab_to_lch, L_BLACK  # noqa: E402
 from illuminant import load_methods, sog_many  # noqa: E402
 from scoring import illum_xy, cct_duv  # noqa: E402
 from hint import near_name  # noqa: E402
@@ -38,6 +38,11 @@ DISPLAY_MAX = 1100                          # 화면에 보낼 그림의 긴 변
 #   가짜 그림: 컬러체커 장면의 흰 칸 57% · A4가 화면 60% 95% · 노란 면 100% 100%. 노란 면이 30~70%만 덮은 장면은 이 값으로 못 가림 (한계)
 MONO_TOL = 3.0
 MONO_SHARE = 0.9
+# 어두운 색 표시 (점검 C3, 웹 표시용 값 — 11/2 폰 시험으로 정함)
+#   밝기가 이름 규칙의 검정 범위(L < L_BLACK = 28)인데 채도가 조금 남아(< DARK_C) 유채색 이름이 나오면 "검정일 수도 있어요"
+#   실제 폰 검정 키: 노출 고정 "분홍"(밝기 10.9 · 채도 12.2) · 자동 노출 "파랑"(23.7 · 18.5) → 걸림.
+#   컬러체커에서 밝기 30 아래 유채색은 보라 10번(채도 29) · 파랑 13번(48~51)뿐이고 맞게 불림 → 안 걸림
+DARK_C = 25.0
 
 # 화면 표시용 변환: XYZ(D50) → sRGB(D65) — Bradford 순응
 _SRGB = colour.RGB_COLOURSPACES["sRGB"]
@@ -317,10 +322,15 @@ def analyze_upload(srgb8, illum, x, y, norm=False, white=None):
         # C1: 흰 종이 기준과 자동 보정의 답이 다르면 알림 (크림 · 베이지 종이를 흰색으로 맞추면 여러 색에서 이렇게 됨)
         white_disagree = (f"흰 종이 기준과 자동 보정이 다르게 봐요 (자동 보정은 '{after['name']}') — "
                           f"맞춘 종이가 크림 · 베이지처럼 흰색이 아니면 흰 종이 기준이 틀렸을 수 있어요")
+    dark_warning = None
+    if main["lab"]["L"] < L_BLACK and main["lab"]["C"] < DARK_C and main["name"] != "검정":
+        # C3: 밝기는 검정 범위인데 색이 조금 남아 유채색 이름이 나옴 — 어두운 곳은 폰의 밝기 곡선 · 반사광 때문에 색이 잘 틀어진다
+        dark_warning = (f"아주 어두운 색이라 이름이 틀릴 수 있어요 — 검정일 수도 있어요 "
+                        f"(어두운 곳은 폰 사진에서 색이 잘 틀어져요)")
     return {**out, "status": "ok", "reason": None, "color_name": main["name"], "near_name": main["near"],
             "baseline_name": before["name"], "explain": explain, "lab": main["lab"], "swatch": main["hex"],
             "white_used": white is not None, "mono_warning": mono_warning, "white_disagree": white_disagree,
-            "methods": methods}
+            "dark_warning": dark_warning, "methods": methods}
 
 
 # ── ③ 실시간 카메라 모드 (IP Webcam, 체험용) ─────────────────────────
